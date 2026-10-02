@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Render viewer</title>
+<style>
+  html,body{margin:0;background:#fff;overflow:hidden}
+  img{position:absolute;transform-origin:0 0}
+</style>
+<!-- view.html?f=file.svg&x=0.5&y=0.2&z=3  (x,y = fractional centre, z = zoom vs. fit-to-width) -->
+<img id="i">
+<script>
+  const p = new URLSearchParams(location.search);
+  const img = document.getElementById('i');
+  img.onload = () => {
+    const W = innerWidth, H = innerHeight;
+    const z = +(p.get('z') || 1), fx = +(p.get('x') || 0.5), fy = +(p.get('y') || 0.5);
+    const w = W * z, h = w * img.naturalHeight / img.naturalWidth;
+    img.style.width = w + 'px';
+    img.style.left = (W / 2 - fx * w) + 'px';
+    img.style.top = (H / 2 - fy * h) + 'px';
+    if (z === 1) img.style.top = Math.max(0, (H - h) / 2) + 'px';
+  };
+  img.src = p.get('f');
+</script>

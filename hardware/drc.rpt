@@ -1,0 +1,26 @@
+** Drc report for pixelpine.kicad_pcb **
+** Created on 2026-10-02T13:37:45 **
+** Report includes: Errors, Warnings, Exclusions **
+
+** Found 2 DRC violations **
+[starved_thermal]: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    Local override; error
+    @(68.4865 mm, 49.0000 mm): Zone [GND] on F.Cu and B.Cu, priority 0
+    @(104.4490 mm, 106.5000 mm): Pad B12 [GND] of J1 on F.Cu
+[starved_thermal]: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    Local override; error
+    @(68.4865 mm, 49.0000 mm): Zone [GND] on F.Cu and B.Cu, priority 0
+    @(102.4000 mm, 102.3900 mm): Pad 2 [GND] of R18 on F.Cu
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

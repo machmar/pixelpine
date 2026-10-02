@@ -1,0 +1,1802 @@
+<meta charset="utf-8">
+<title>PixelPine Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Single dark theme on purpose: the product is a night-time light. */
+  :root {
+    color-scheme: dark;
+    --ground: #0c110f;
+    --panel: #131a17;
+    --panel-2: #18211d;
+    --line: #26312c;
+    --text: #ebe4d6;
+    --muted: #8c9891;
+    --led: #ffc47d;
+    --led-soft: rgba(255, 196, 125, 0.14);
+    --berry: #ff9fb2;
+    --mint: #8fe0bf;
+    --sky: #9cc7ff;
+    --ok: #8fe0bf;
+    --warn: #e8b85c;
+    --bad: #ef7d6a;
+    --display: "Fredoka", "Nunito", "Segoe UI", system-ui, sans-serif;
+    --ui: "Nunito", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --r: 22px;
+  }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ground); color: var(--text); font: 14px/1.45 var(--ui); -webkit-font-smoothing: antialiased; }
+  .app {
+    box-sizing: border-box; height: 100%;
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px;
+    padding-inline: 16px; padding-block: 16px;
+  }
+  /* ---------- stage ---------- */
+  .stage {
+    position: relative; min-height: 0; border-radius: var(--r); overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 30%, #101815 0%, #0a0e0c 70%);
+    border: 1px solid var(--line);
+    display: grid; grid-template-rows: minmax(0, 1fr) auto;
+  }
+  #tree { width: 100%; height: 100%; display: block; cursor: default; touch-action: none; }
+  #tree.over-star { cursor: pointer; }
+  .now { position: absolute; top: 18px; left: 20px; max-width: min(44ch, 58%); pointer-events: none; }
+  .eyebrow {
+    display: inline-block; font: 700 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+    color: #1b140b; background: var(--led); border-radius: 999px; padding: 5px 9px 4px;
+  }
+  .eyebrow[data-mood="sleep"] { background: var(--sky); color: #0b1a2c; }
+  .eyebrow[data-mood="grumpy"] { background: var(--bad); color: #2a0d08; }
+  .eyebrow[data-mood="dream"] { background: var(--berry); color: #2b0d15; }
+  .eyebrow[data-mood="manual"] { background: var(--mint); color: #0c1f17; }
+  .now h2 { margin: 6px 0 4px; font: 600 26px/1.1 var(--display); color: var(--text); text-wrap: balance; }
+  .now p { margin: 0; color: var(--muted); font-size: 13px; }
+  .hint { position: absolute; top: 20px; right: 20px; font: 12px/1.45 var(--mono); color: var(--muted); text-align: right; pointer-events: none; }
+  .hint b { color: var(--led); font-weight: 600; }
+  .tip {
+    position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 12px));
+    background: rgba(12, 17, 15, .92); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 9px; font: 12px/1.35 var(--mono); color: var(--text); white-space: nowrap;
+  }
+  .phases { border-top: 1px solid var(--line); background: rgba(19, 26, 23, .85); padding: 10px 16px 22px; }
+  .phases-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .phases-head span { font: 12px/1 var(--mono); color: var(--muted); }
+  .phases-head strong { font: 600 14px/1 var(--display); color: var(--berry); }
+  .bars { position: relative; height: 48px; display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; align-items: stretch; }
+  .bars .limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--bad); opacity: .7; pointer-events: none; }
+  .bar { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+  .bar i { display: block; background: linear-gradient(to top, #c98d52, var(--led)); border-radius: 6px 6px 2px 2px; min-height: 2px; }
+  .bar.hot i { background: linear-gradient(to top, #a8503f, var(--bad)); }
+  .bar em { position: absolute; bottom: -15px; left: 0; right: 0; text-align: center; font: 9px/1 var(--mono); color: var(--muted); font-style: normal; }
+
+  /* ---------- rail ---------- */
+  .rail { min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; }
+  .rail header { padding: 18px 18px 14px; border-bottom: 1px solid var(--line); }
+  .rail h1 { margin: 0; font: 600 26px/1 var(--display); display: flex; align-items: center; gap: 8px; }
+  .rail h1 .word span { color: var(--led); }
+  .rail h1 svg { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 0 6px rgba(255,196,125,.55)); }
+  .sub { margin: 8px 0 0; font: 12px/1.4 var(--mono); color: var(--muted); }
+  .rail section { padding: 14px 18px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+  .rail h3 { margin: 0; font: 600 16px/1 var(--display); color: var(--berry); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .rail h3 small { font: 12px var(--ui); color: var(--muted); }
+  .thought { margin: 0; font: italic 600 14px/1.35 var(--ui); color: var(--text); min-height: 1.35em; }
+  .meters { display: grid; grid-template-columns: 78px 1fr 34px; gap: 6px 10px; align-items: center; }
+  .meters label { color: var(--muted); font-size: 12.5px; }
+  .meter { height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--line); }
+  .meter i { display: block; height: 100%; border-radius: 99px; background: var(--c, var(--led)); transition: width .25s ease; }
+  .meters output { font: 11.5px var(--mono); text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn { font: 700 13px/1 var(--ui); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+  .btn:hover { border-color: #3a4841; }
+  .btn:focus-visible, select:focus-visible, input:focus-visible, .chip:focus-visible { outline: 2px solid var(--led); outline-offset: 2px; }
+  .btn.primary { background: var(--led); color: #1b140b; border-color: var(--led); min-width: 76px; }
+  .gestures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .gestures .btn { padding: 8px 6px; font-size: 12.5px; }
+  .sensor { position: relative; height: 34px; }
+  .sensor .track { position: absolute; left: 0; right: 0; top: 6px; height: 10px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .sensor .track i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--sky), var(--led), var(--berry)); }
+  .sensor .th { position: absolute; top: 2px; height: 18px; border-left: 1px dashed #56645d; }
+  .sensor .th span { position: absolute; top: 20px; left: -2px; font: 10px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+  .gchip { display: inline-block; font: 700 11px/1 var(--ui); letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .gchip.on { background: var(--led); color: #1b140b; border-color: var(--led); }
+  .field { display: grid; grid-template-columns: 92px 1fr 52px; gap: 10px; align-items: center; }
+  .field label { color: var(--muted); font-size: 13px; }
+  .field output { font: 12px/1 var(--mono); text-align: right; color: var(--text); }
+  input[type="range"] { width: 100%; accent-color: var(--led); }
+  .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font-size: 13px; cursor: pointer; }
+  .check input { accent-color: var(--led); margin-top: 2px; }
+  .check small { display: block; color: var(--muted); font-size: 12px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { all: unset; text-align: center; padding: 8px 4px; font: 600 12px/1.1 var(--ui); color: var(--muted); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--led); color: #1b140b; font-weight: 800; }
+  .seg button:focus-visible { outline: 2px solid var(--led); outline-offset: -2px; }
+  select { font: 13px var(--ui); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; width: 100%; }
+  .note { margin: 0; color: var(--muted); font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { all: unset; cursor: pointer; font: 700 12px/1 var(--ui); padding: 7px 10px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
+  .chip:hover { border-color: #3a4841; }
+  .chip[aria-pressed="true"] { background: var(--led-soft); border-color: var(--led); }
+  .chip.face { color: var(--berry); }
+  .sublabel { font: 700 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  dl.read { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; }
+  dl.read dt { color: var(--muted); font-size: 13px; }
+  dl.read dd { margin: 0; font: 600 13px/1.2 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; font: 600 10px/1 var(--mono); letter-spacing: .06em; padding: 3px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+  .pill.ok { color: #0c1a12; background: var(--ok); }
+  .pill.warn { color: #221806; background: var(--warn); }
+  .pill.bad { color: #230c08; background: var(--bad); }
+  .rail footer { padding: 14px 18px 18px; color: var(--muted); font-size: 12px; }
+  .rail footer code { font: 11px var(--mono); color: var(--text); }
+  @media (max-width: 900px) {
+    html, body { height: auto; }
+    .app { height: auto; grid-template-columns: 1fr; }
+    .stage { height: 78vh; min-height: 480px; }
+    .rail { overflow: visible; }
+    .now h2 { font-size: 20px; }
+    .hint { display: none; }
+  }
+</style>
+
+<div class="app">
+  <main class="stage" aria-label="Tree preview">
+    <canvas id="tree" aria-label="PixelPine tree with 240 simulated LEDs. Hover, click or hold the star to interact with Pine."></canvas>
+    <div class="now">
+      <div class="eyebrow" id="nowEyebrow">Pine is waking up</div>
+      <h2 id="nowName">Good morning</h2>
+      <p id="nowBlurb"></p>
+    </div>
+    <div class="hint">
+      The <b>star</b> is Pine's touch pad<br>
+      hover · click = tap · hold = pet<br>
+      shift+hold = press · ctrl+hold = squeeze<br>
+      click fast ×3 = tickle
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <section class="phases" aria-label="Pin current per scan phase">
+      <div class="phases-head">
+        <strong>How hard each pin works</strong>
+        <span>peak mA per scan phase · dashed = 20 mA pin rating</span>
+      </div>
+      <div class="bars" id="bars"><div class="limit" id="limit"></div></div>
+    </section>
+  </main>
+
+  <aside class="rail">
+    <header>
+      <h1><svg viewBox="-5 -5 10 10" aria-hidden="true"><path id="logoStar" fill="#ffc47d"/></svg><span class="word">Pixel<span>Pine</span></span></h1>
+      <p class="sub">Pine's job is to show you light shows. He's not very good at it.</p>
+    </header>
+
+    <section aria-labelledby="hPine">
+      <h3 id="hPine">How Pine feels <small id="pineState">waking up</small></h3>
+      <p class="thought" id="thought" aria-live="polite"></p>
+      <div class="meters" id="meters"></div>
+      <label class="check" for="ambient">
+        <input type="checkbox" id="ambient" checked>
+        <span>Room lights on<small>Pine senses ambient light by reading his own LEDs; in the dark he gets sleepy</small></span>
+      </label>
+      <div class="field">
+        <label for="clock">Pine's clock</label>
+        <select id="clock">
+          <option value="1">1× like the real tree</option>
+          <option value="10" selected>10× demo</option>
+          <option value="30">30× fast forward</option>
+        </select>
+        <span></span>
+      </div>
+      <div class="row"><button class="btn" id="forget" type="button">Reset friendship</button></div>
+    </section>
+
+    <section aria-labelledby="hTouch">
+      <h3 id="hTouch">Touch the star <span class="gchip" id="gchip">—</span></h3>
+      <div class="sensor" aria-label="Touch sensor signal">
+        <div class="track"><i id="sensorBar"></i></div>
+        <div class="th" id="thHover"><span>hover</span></div>
+        <div class="th" id="thTouch"><span>touch</span></div>
+        <div class="th" id="thPress"><span>press</span></div>
+        <div class="th" id="thSqueeze"><span>squeeze</span></div>
+      </div>
+      <div class="gestures">
+        <button class="btn" type="button" data-g="hover">Hover</button>
+        <button class="btn" type="button" data-g="tap">Tap</button>
+        <button class="btn" type="button" data-g="pet">Pet</button>
+        <button class="btn" type="button" data-g="press">Press</button>
+        <button class="btn" type="button" data-g="squeeze">Squeeze</button>
+        <button class="btn" type="button" data-g="tickle">Tickle</button>
+      </div>
+      <p class="note">The buttons play a recorded sensor signal; the same classifier the firmware will use turns it into a gesture.</p>
+    </section>
+
+    <section aria-labelledby="hPrev">
+      <h3 id="hPrev">Preview <small id="modeLabel">Pine decides</small></h3>
+      <div class="row"><button class="btn primary" id="auto" type="button">Let Pine decide</button>
+        <button class="btn" id="play" type="button">Pause</button></div>
+      <div class="sublabel">Light shows</div>
+      <div class="chips" id="showChips"></div>
+      <div class="sublabel">Pine's faces</div>
+      <div class="chips" id="faceChips"></div>
+      <div class="field">
+        <label for="trans">Transition</label>
+        <select id="trans"></select>
+        <span></span>
+      </div>
+      <div class="field">
+        <label for="speed">Speed</label>
+        <input type="range" id="speed" min="0.25" max="3" step="0.05" value="1">
+        <output id="speedOut" for="speed">1.00×</output>
+      </div>
+      <div class="field">
+        <label for="master">Brightness</label>
+        <input type="range" id="master" min="0.1" max="1" step="0.01" value="1">
+        <output id="masterOut" for="master">100%</output>
+      </div>
+    </section>
+
+    <section aria-labelledby="hHw">
+      <h3 id="hHw">Hardware model</h3>
+      <div class="seg" role="group" aria-label="Rendering model">
+        <button type="button" data-mode="ideal" aria-pressed="false">Ideal</button>
+        <button type="button" data-mode="raw" aria-pressed="true">Raw scan</button>
+        <button type="button" data-mode="comp" aria-pressed="false">Compensated</button>
+      </div>
+      <p class="note" id="modeNote"></p>
+      <div class="field">
+        <label for="bits">PWM depth</label>
+        <select id="bits">
+          <option value="5">5 bit · 32</option>
+          <option value="6">6 bit · 64</option>
+          <option value="7">7 bit · 128</option>
+          <option value="8" selected>8 bit · 256</option>
+          <option value="9">9 bit · 512</option>
+          <option value="10">10 bit · 1024</option>
+        </select>
+        <span></span>
+      </div>
+      <div class="field">
+        <label for="exposure">Exposure</label>
+        <input type="range" id="exposure" min="2" max="20" step="0.5" value="8">
+        <output id="exposureOut" for="exposure">8.0</output>
+      </div>
+      <dl class="read">
+        <dt>Supply current</dt><dd id="rI">–</dd>
+        <dt>Power @ 5 V</dt><dd id="rP">–</dd>
+        <dt>Peak pin current</dt><dd id="rPk">–</dd>
+        <dt>Refresh (BCM, 2 µs slot)</dt><dd id="rHz">–</dd>
+        <dt>Darkest step</dt><dd id="rMin">–</dd>
+      </dl>
+    </section>
+
+    <footer>
+      Speech bubbles are for this preview only; the real Pine talks with his face.
+      Model: <code>5.0 V</code>, <code>Vf 2.75 V</code>, <code>100 Ω</code> per line, <code>≈30 Ω</code> GPIO driver,
+      MCU <code>≈3 mA</code> (PY32F003 at 24 MHz). LEDs sharing a scan slot share one pin's current, so busy phases dim.
+      Pine's bond with you is remembered in this browser (the tree keeps it in flash).
+    </footer>
+  </aside>
+</div>
+
+<script src="led_map.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   PixelPine preview — geometry, light shows, Pine's brain, hardware model, renderer
+   ===================================================================== */
+const MAP = window.LED_MAP;
+const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const N = MAP.leds.length;            // 240
+const P = MAP.pitch;                  // grid pitch, mm
+const LX = new Float32Array(N), LY = new Float32Array(N);
+const GX = new Int16Array(N), GY = new Int16Array(N);
+const AN = new Uint8Array(N), CA = new Uint8Array(N);
+MAP.leds.forEach((l, i) => { LX[i] = l.x; LY[i] = l.y; GX[i] = l.gx; GY[i] = l.gy; AN[i] = l.a; CA[i] = l.c; });
+let Y0 = Infinity, Y1 = -Infinity;
+for (let i = 0; i < N; i++) { Y0 = Math.min(Y0, LY[i]); Y1 = Math.max(Y1, LY[i]); }
+const SC = MAP.star_c;                // star centre (mm)
+const U = new Float32Array(N), V = new Float32Array(N), DS = new Float32Array(N), REL = new Float32Array(N);
+const rowHalf = {};                   // gy -> half width of the lit row (mm)
+for (let i = 0; i < N; i++) rowHalf[GY[i]] = Math.max(rowHalf[GY[i]] || 0, Math.abs(LX[i]) + P * 0.5);
+for (let i = 0; i < N; i++) {
+  U[i] = LX[i] / 22;                          // ~ -1..1 across the widest row
+  V[i] = (LY[i] - Y0) / (Y1 - Y0);            // 0 top .. 1 bottom
+  DS[i] = Math.hypot(LX[i] - SC[0], LY[i] - SC[1]);
+  REL[i] = LX[i] / rowHalf[GY[i]];            // -1..1 inside its own row (cone angle proxy)
+}
+const GRID = new Int16Array(64 * 32).fill(-1);
+for (let i = 0; i < N; i++) GRID[(GX[i] + 32) * 32 + GY[i]] = i;
+const at = (gx, gy) => (gx < -32 || gx > 31 || gy < 0 || gy > 31) ? -1 : GRID[(gx + 32) * 32 + gy];
+const colBottom = {};
+for (let i = 0; i < N; i++) colBottom[GX[i]] = Math.max(colBottom[GX[i]] ?? -1, GY[i]);
+const byAnode = Array.from({ length: 16 }, () => []);
+for (let i = 0; i < N; i++) byAnode[AN[i]].push(i);
+const gyMin = Math.min(...GY), gyMax = Math.max(...GY);
+function halfWidthAt(y) {
+  const g = Math.round((y - Y0) / P) + gyMin;
+  return rowHalf[Math.max(gyMin, Math.min(gyMax, g))] || 4;
+}
+
+/* puffy star (same polar formula as hardware/scripts/geometry.py) for the logo */
+(() => {
+  const pts = [];
+  for (let i = 0; i < 80; i++) {
+    const th = -Math.PI / 2 + 2 * Math.PI * i / 80;
+    const c = 0.5 + 0.5 * Math.cos(5 * (th + Math.PI / 2));
+    const r = 2.5 + (4.6 - 2.5) * Math.pow(c, 1.1);
+    pts.push((r * Math.cos(th)).toFixed(2) + " " + (r * Math.sin(th)).toFixed(2));
+  }
+  document.getElementById("logoStar").setAttribute("d", "M" + pts.join("L") + "Z");
+})();
+const BG_SNOW = Array.from({ length: 70 }, (_, i) => ({
+  x: (hashU(i * 31 + 7) * 2 - 1) * 34, y: hashU(i * 17 + 3) * 84 - 6,
+  r: 0.12 + 0.3 * hashU(i * 13 + 1), vy: 1.2 + 2.6 * hashU(i * 5 + 9), ph: hashU(i * 3 + 2) * 6.28,
+}));
+
+/* ---------- portable helpers (each has a trivial fixed-point C twin) ---------- */
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+const frac = x => x - Math.floor(x);
+function makeRng(seed) {                   // xorshift32
+  let s = (seed >>> 0) || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+function hashU(x) {
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d); x = Math.imul(x ^ (x >>> 15), 0x846ca68b); x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+const hash1 = i => hashU(Math.imul(i | 0, 0x9e3779b1));
+const hash2 = (x, y) => hashU(Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263));
+function noise2(x, y) {                    // value noise, 0..1
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+const fbm = (x, y) => 0.55 * noise2(x, y) + 0.3 * noise2(x * 2.1 + 17, y * 2.1 + 5) + 0.15 * noise2(x * 4.3 + 3, y * 4.3 + 11);
+/* soft "light blob" onto the LED grid; max-combine keeps trails from blowing out */
+function splat(buf, x, y, amp, r) {
+  const g0 = Math.floor((x - r) / P), g1 = Math.ceil((x + r) / P);
+  const h0 = Math.floor((y - r - Y0) / P) + gyMin, h1 = Math.ceil((y + r - Y0) / P) + gyMin;
+  for (let gx = g0; gx <= g1; gx++) for (let gy = h0; gy <= h1; gy++) {
+    const i = at(gx, gy); if (i < 0) continue;
+    const d = Math.hypot(LX[i] - x, LY[i] - y); if (d >= r) continue;
+    const f = 1 - d / r, v = amp * f * f;
+    if (v > buf[i]) buf[i] = v;
+  }
+}
+function addSplat(buf, x, y, amp, r) {
+  const g0 = Math.floor((x - r) / P), g1 = Math.ceil((x + r) / P);
+  const h0 = Math.floor((y - r - Y0) / P) + gyMin, h1 = Math.ceil((y + r - Y0) / P) + gyMin;
+  for (let gx = g0; gx <= g1; gx++) for (let gy = h0; gy <= h1; gy++) {
+    const i = at(gx, gy); if (i < 0) continue;
+    const d = Math.hypot(LX[i] - x, LY[i] - y); if (d >= r) continue;
+    const f = 1 - d / r; buf[i] = Math.min(1, buf[i] + amp * f * f);
+  }
+}
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+/* =====================================================================
+   Animations: init(s) once, frame(s, t, dt, out) at the firmware rate.
+   out[i] is perceived brightness 0..1 (gamma is applied later, like firmware).
+   ===================================================================== */
+const ANIMS = [
+  {
+    id: "twinkle", name: "Twinkle", blurb: "Random LEDs fade in and out softly, like a starry sky.",
+    init(s) { s.ph = new Float32Array(N).fill(-1); s.dur = new Float32Array(N); s.pk = new Float32Array(N); },
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        if (s.ph[i] < 0) {
+          if (s.rnd() < dt * 0.45) { s.ph[i] = 0; s.dur[i] = 0.9 + s.rnd() * 1.8; s.pk[i] = 0.45 + 0.55 * s.rnd(); }
+          out[i] = 0.05;
+        } else {
+          s.ph[i] += dt;
+          const x = s.ph[i] / s.dur[i];
+          if (x >= 1) { s.ph[i] = -1; out[i] = 0.05; }
+          else { const e = Math.sin(Math.PI * x); out[i] = Math.min(1, 0.05 + s.pk[i] * e * e); }
+        }
+      }
+    },
+  },
+  {
+    id: "snow", name: "Snowfall", blurb: "Flakes drift down with a slight sway, pile up on the branches, then melt away.",
+    init(s) { s.fl = []; s.snow = new Float32Array(N); s.depth = new Int16Array(64); s.melt = false; s.spawn = 0; s.total = 0; },
+    frame(s, t, dt, out) {
+      out.fill(0.02);
+      s.spawn += dt * 4.5;
+      while (s.spawn >= 1) {
+        s.spawn -= 1;
+        if (s.fl.length < 26) s.fl.push({ x: (s.rnd() * 2 - 1) * 21, y: Y0 - 3 - s.rnd() * 5, vy: 4 + s.rnd() * 3.5, ph: s.rnd() * 6.28, sw: 0.6 + s.rnd() * 1.2 });
+      }
+      for (let k = s.fl.length - 1; k >= 0; k--) {
+        const f = s.fl[k];
+        f.y += f.vy * dt;
+        const x = f.x + f.sw * Math.sin(t * 1.4 + f.ph);
+        const gx = Math.round(x / P);
+        const bottom = colBottom[gx];
+        if (bottom !== undefined && !s.melt) {
+          const li = at(gx, bottom - s.depth[gx + 32]);
+          if (li >= 0 && f.y >= LY[li]) { s.snow[li] = 1; s.depth[gx + 32]++; s.total++; s.fl.splice(k, 1); continue; }
+        }
+        if (f.y > Y1 + 3) { s.fl.splice(k, 1); continue; }
+        splat(out, x, f.y, 0.95, P * 1.25);
+      }
+      if (s.total > 70) s.melt = true;
+      if (s.melt) {
+        let any = false;
+        for (let i = 0; i < N; i++) if (s.snow[i] > 0) { s.snow[i] = Math.max(0, s.snow[i] - dt * 0.22 * (0.4 + (1 - V[i]))); any = any || s.snow[i] > 0; }
+        if (!any) { s.melt = false; s.total = 0; s.depth.fill(0); }
+      }
+      for (let i = 0; i < N; i++) if (s.snow[i] > 0) out[i] = Math.max(out[i], s.snow[i] * (0.42 + 0.06 * Math.sin(t * 2 + i)));
+    },
+  },
+  {
+    id: "breathe", name: "Breathe", blurb: "The whole tree slowly swells and fades, the breath rolling down from the top.",
+    init() {},
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        const c = 0.5 - 0.5 * Math.cos(2 * Math.PI * (t / 5.2 - V[i] * 0.22));
+        out[i] = 0.06 + 0.94 * Math.pow(c, 1.6) * (1 - 0.22 * V[i]);
+      }
+    },
+  },
+  {
+    id: "garland", name: "Spiral garland", blurb: "Two bands of bulbs wind upward, so the flat board reads as a wrapped cone.",
+    init() {},
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        const th = Math.asin(clamp(REL[i], -0.999, 0.999));
+        const depth = Math.cos(th);
+        let b = 0.035;
+        for (const g of [0, 0.5]) {
+          const ph = frac(V[i] * 2.6 + th / Math.PI * 0.5 - t * 0.11 + g);
+          const d = (ph - 0.5) / 0.065;
+          const bulbs = 0.65 + 0.35 * Math.sin(th * 7 - t * 3 + g * 9);
+          b += Math.exp(-d * d) * bulbs * (g ? 0.55 : 1) * (0.45 + 0.55 * depth);
+        }
+        out[i] = Math.min(1, b);
+      }
+    },
+  },
+  {
+    id: "candle", name: "Candle flicker", blurb: "Every LED breathes like its own little flame; a draught passes now and then.",
+    init() {},
+    frame(s, t, dt, out) {
+      const gust = 0.72 + 0.28 * smooth(0.22, 0.6, noise2(t * 0.35, 7.3));
+      for (let i = 0; i < N; i++) {
+        const n1 = fbm(i * 0.731, t * 2.4);
+        const region = 0.85 + 0.3 * (noise2(LX[i] * 0.09 + t * 0.6, LY[i] * 0.09) - 0.5);
+        out[i] = clamp((0.22 + 0.62 * n1) * gust * region);
+      }
+    },
+  },
+  {
+    id: "ripple", name: "Star ripple", blurb: "Soft rings spread from the star down across the branches.",
+    init() {},
+    frame(s, t, dt, out) {
+      const period = 2.1, kNow = Math.floor(t / period);
+      for (let i = 0; i < N; i++) {
+        let b = 0.035 + 0.12 * Math.exp(-DS[i] / 10);
+        for (let k = kNow; k > kNow - 4; k--) {
+          const age = t - k * period; if (age < 0) continue;
+          const dd = (DS[i] - age * 21) / 3.2;
+          b += Math.exp(-dd * dd) * Math.exp(-age / 2.4) * 0.95;
+        }
+        out[i] = Math.min(1, b);
+      }
+    },
+  },
+  {
+    id: "fireflies", name: "Fireflies", blurb: "A few blinking sparks wander about, leaving fading trails.",
+    init(s) {
+      s.buf = new Float32Array(N);
+      s.f = Array.from({ length: 7 }, () => ({ x: (s.rnd() * 2 - 1) * 8, y: Y0 + 12 + s.rnd() * 28, h: s.rnd() * 6.28, sp: 5 + s.rnd() * 3, ph: s.rnd() * 6.28, w: 1.5 + s.rnd() * 1.5 }));
+    },
+    frame(s, t, dt, out) {
+      const decay = Math.exp(-dt * 2.2);
+      for (let i = 0; i < N; i++) s.buf[i] *= decay;
+      for (const f of s.f) {
+        f.h += (noise2(t * 0.7, f.ph * 10) - 0.5) * dt * 6;
+        f.x += Math.cos(f.h) * f.sp * dt; f.y += Math.sin(f.h) * f.sp * dt;
+        const half = halfWidthAt(f.y) - 2;
+        if (f.y < Y0 + 3 || f.y > Y1 - 1 || Math.abs(f.x) > half) {
+          const want = Math.atan2((Y0 + Y1) / 2 + 6 - f.y, -f.x);
+          f.h += angDiff(want, f.h) * dt * 3;
+        }
+        const blink = 0.25 + 0.75 * Math.pow(Math.max(0, Math.sin(t * f.w + f.ph)), 2);
+        splat(s.buf, f.x, f.y, blink, P * 1.35);
+      }
+      for (let i = 0; i < N; i++) out[i] = Math.max(0.02, s.buf[i]);
+    },
+  },
+  {
+    id: "sparks", name: "Rising sparks", blurb: "Embers rise from the trunk and fade out on their way to the top.",
+    init(s) { s.p = []; s.buf = new Float32Array(N); s.spawn = 0; },
+    frame(s, t, dt, out) {
+      const decay = Math.exp(-dt * 7);
+      for (let i = 0; i < N; i++) s.buf[i] *= decay;
+      s.spawn += dt * 11;
+      while (s.spawn >= 1) {
+        s.spawn -= 1;
+        s.p.push({ x: (s.rnd() * 2 - 1) * rowHalf[gyMax] * 0.85, y: Y1 + 1.5, vy: -(11 + s.rnd() * 9), ph: s.rnd() * 6.28, a: 0.6 + 0.4 * s.rnd(), life: 0.45 + 0.55 * s.rnd() });
+      }
+      for (let k = s.p.length - 1; k >= 0; k--) {
+        const p = s.p[k];
+        p.y += p.vy * dt;
+        const prog = (Y1 - p.y) / (Y1 - Y0);
+        if (prog > p.life) { s.p.splice(k, 1); continue; }
+        splat(s.buf, p.x + 0.9 * Math.sin(t * 5 + p.ph), p.y, p.a * Math.pow(1 - prog / p.life, 1.2), P * 1.1);
+      }
+      for (let i = 0; i < N; i++) out[i] = Math.max(s.buf[i], 0.025 + 0.07 * V[i] * V[i]);
+    },
+  },
+  {
+    id: "fill", name: "Fill & drain", blurb: "Light fills the tree like liquid with a wavy surface, then drains away.",
+    init() {},
+    frame(s, t, dt, out) {
+      const tc = t % 11;
+      const L = tc < 4 ? smooth(0, 4, tc) : tc < 5.5 ? 1 : tc < 9.5 ? 1 - smooth(5.5, 9.5, tc) : 0;
+      for (let i = 0; i < N; i++) {
+        const surf = 1.04 - L * 1.1 + 0.025 * Math.sin(U[i] * 7 + t * 2.6) + 0.015 * Math.sin(U[i] * 13 - t * 4.1);
+        const under = smooth(surf - 0.015, surf + 0.03, V[i]);
+        const e = (V[i] - surf) / 0.028;
+        out[i] = clamp(0.03 + under * 0.6 + Math.exp(-e * e) * 0.5);
+      }
+    },
+  },
+  {
+    id: "aurora", name: "Northern lights", blurb: "Slow curtains of light drift and fold across the branches.",
+    init() {},
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        const w = U[i] * 1.6 + 0.35 * Math.sin(V[i] * 2.8 + t * 0.27);
+        const r1 = 1 - Math.abs(2 * noise2(w + t * 0.07, t * 0.09 + 3.1) - 1);
+        const r2 = 1 - Math.abs(2 * noise2(w * 1.7 - t * 0.05 + 40, t * 0.13) - 1);
+        const rays = 0.35 + 0.65 * noise2(U[i] * 6.5, V[i] * 1.4 - t * 0.45);
+        out[i] = clamp(0.025 + (0.95 * r1 * r1 * r1 + 0.5 * Math.pow(r2, 4)) * rays);
+      }
+    },
+  },
+  {
+    id: "fireworks", name: "Fireworks", blurb: "A rocket climbs, bursts into a ring of sparks, and the sparks fall and fade.",
+    init(s) { s.buf = new Float32Array(N); s.rk = []; s.pt = []; s.next = 0.3; s.fl = []; },
+    frame(s, t, dt, out) {
+      const decay = Math.exp(-dt * 9);
+      for (let i = 0; i < N; i++) s.buf[i] *= decay;
+      s.next -= dt;
+      if (s.next <= 0) {
+        s.next = 1.1 + s.rnd() * 1.6;
+        const tx = (s.rnd() * 2 - 1) * 10;
+        s.rk.push({ x: tx * 0.6, y: Y1 + 2, tx, ty: Y0 + 4 + s.rnd() * 20 });
+      }
+      for (let k = s.rk.length - 1; k >= 0; k--) {
+        const r = s.rk[k];
+        r.y -= 34 * dt; r.x += (r.tx - r.x) * dt * 1.5;
+        splat(s.buf, r.x, r.y, 0.8, P * 0.9);
+        if (r.y <= r.ty) {
+          const n = 18 + Math.floor(s.rnd() * 8);
+          for (let j = 0; j < n; j++) {
+            const a = 2 * Math.PI * j / n + s.rnd() * 0.2, sp = 11 + s.rnd() * 6;
+            s.pt.push({ x: r.x, y: r.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, life: 1.2 + s.rnd() * 0.8 });
+          }
+          s.fl.push({ x: r.x, y: r.y, a: 1 });
+          s.rk.splice(k, 1);
+        }
+      }
+      const drag = Math.exp(-dt * 1.6);
+      for (let k = s.pt.length - 1; k >= 0; k--) {
+        const p = s.pt[k];
+        p.vx *= drag; p.vy = p.vy * drag + 9 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.age += dt;
+        if (p.age > p.life) { s.pt.splice(k, 1); continue; }
+        const u = p.age / p.life;
+        const tw = u > 0.6 ? (s.rnd() < 0.5 ? 0.35 : 1) : 1;
+        splat(s.buf, p.x, p.y, Math.pow(1 - u, 1.4) * tw, P * 1.0);
+      }
+      for (let k = s.fl.length - 1; k >= 0; k--) {
+        const f = s.fl[k];
+        addSplat(s.buf, f.x, f.y, f.a * 0.35, 9);
+        f.a -= dt * 4; if (f.a <= 0) s.fl.splice(k, 1);
+      }
+      for (let i = 0; i < N; i++) out[i] = Math.max(0.015, s.buf[i]);
+    },
+  },
+  {
+    id: "ornaments", name: "Ornaments", blurb: "Round baubles glow up at random spots while a dim garland sparkles.",
+    init(s) {
+      s.orn = Array.from({ length: 9 }, () => ({ i: Math.floor(s.rnd() * N), t0: -s.rnd() * 5, hold: 2 + s.rnd() * 3 }));
+    },
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        const th = Math.asin(clamp(REL[i], -0.999, 0.999));
+        const ph = frac(V[i] * 1.8 + th / Math.PI * 0.5 + 0.2), d = (ph - 0.5) / 0.04;
+        const glint = Math.pow(0.5 + 0.5 * Math.sin(th * 10 - t * 2.5), 6);
+        out[i] = 0.03 + Math.exp(-d * d) * (0.1 + 0.3 * glint);
+      }
+      for (const o of s.orn) {
+        let age = t - o.t0;
+        const total = 2.4 + o.hold;
+        if (age > total) {
+          for (let tries = 0; tries < 20; tries++) {           // keep baubles apart
+            const c = Math.floor(s.rnd() * N);
+            if (s.orn.every(q => q === o || Math.hypot(LX[q.i] - LX[c], LY[q.i] - LY[c]) > 7)) { o.i = c; break; }
+          }
+          o.t0 = t; o.hold = 2 + s.rnd() * 3; age = 0;
+        }
+        const env = age < 1.2 ? smooth(0, 1.2, age) : age < 1.2 + o.hold ? 1 : 1 - smooth(1.2 + o.hold, total, age);
+        splat(out, LX[o.i], LY[o.i], env, P * 1.7);
+      }
+    },
+  },
+  {
+    id: "radar", name: "Soft radar", blurb: "A wide, low-contrast glow sweeps slowly back and forth beneath the star.",
+    init() {},
+    frame(s, t, dt, out) {
+      const w = 2 * Math.PI / 8, beam = 0.95 * Math.sin(w * t), dir = Math.cos(w * t) >= 0 ? 1 : -1;
+      for (let i = 0; i < N; i++) {
+        const phi = Math.atan2(LX[i] - SC[0], LY[i] - SC[1]);   // 0 = straight down
+        const d = angDiff(beam, phi) * -1, e = d / 0.42;
+        const behind = -dir * d;
+        const tail = behind > 0 ? Math.exp(-behind / 0.7) * 0.28 : 0;
+        out[i] = clamp((0.16 + 0.5 * Math.exp(-e * e) + tail) * (1 - 0.25 * DS[i] / 60));
+      }
+    },
+  },
+  {
+    id: "heart", name: "Heartbeat", blurb: "A double pulse spreads out from the middle of the tree.",
+    init() {},
+    frame(s, t, dt, out) {
+      const per = 1.25;
+      for (let i = 0; i < N; i++) {
+        const d = Math.hypot(LX[i], LY[i] - 30);
+        let tau = (t % per) - d / 55; if (tau < 0) tau += per;
+        const a = (tau - 0.08) / 0.07, b = (tau - 0.34) / 0.09;
+        const env = Math.exp(-a * a) + 0.6 * Math.exp(-b * b);
+        out[i] = clamp(0.05 + 0.9 * env * (1 - 0.45 * Math.min(1, d / 35)));
+      }
+    },
+  },
+  {
+    id: "tinsel", name: "Tinsel shimmer", blurb: "Glints run along draped strands, with the odd sparkle in between.",
+    init() {},
+    frame(s, t, dt, out) {
+      for (let i = 0; i < N; i++) {
+        const gy = GY[i], dir = gy % 2 ? 1 : -1;
+        const strand = gy % 3 === 0 ? 1 : 0.35;
+        const glint = Math.pow(Math.max(0, Math.sin(LX[i] * 0.55 + gy * 0.9 + t * 2.4 * dir + hash2(gy, 3) * 6.28)), 14) * strand;
+        const sp = Math.pow(Math.max(0, Math.sin(t * (2.5 + hash1(i) * 3.5) + hash1(i + 999) * 40)), 40);
+        out[i] = clamp(0.06 + 0.8 * glint + 0.85 * sp);
+      }
+    },
+  },
+];
+
+/* =====================================================================
+   Runtime core: light-show instances tick at the firmware rate (50 fps)
+   ===================================================================== */
+const FW_DT = 1 / 50;
+let seedCounter = 1;
+function instance(k) {
+  const s = { rnd: makeRng(0x9e3779b9 ^ (k * 7919 + seedCounter++ * 104729)), t: 0 };
+  ANIMS[k].init(s);
+  return { k, s, out: new Float32Array(N) };
+}
+function stepInst(inst) { inst.out.fill(0); ANIMS[inst.k].frame(inst.s, inst.s.t, FW_DT, inst.out); inst.s.t += FW_DT; }
+const state = { playing: true, speed: 1, master: 1, mode: "raw", bits: 8, exposure: 8, starFlash: 0, hover: -1, starHover: false };
+const mix = new Float32Array(N);         // final frame handed to the hardware model
+
+/* =====================================================================
+   Pine's face: pixel parts drawn on the LED grid (grid units: gx, gy)
+   ===================================================================== */
+const FACE_AX = 0, FACE_AY = 15;          // face anchor: eyes on rows 14-15, mouth on rows 17-18
+const EYE = {                             // left eye; the right eye is the mirror image
+  open: [[-4, -1], [-3, -1], [-4, 0], [-3, 0]],
+  wide: [[-4, -2], [-3, -2], [-4, -1], [-3, -1], [-4, 0], [-3, 0]],
+  happy: [[-5, 0], [-4, -1], [-3, 0]],            // ^
+  sleep: [[-5, -1], [-4, 0], [-3, -1]],           // v  (closed, content)
+  closed: [[-5, 0], [-4, 0], [-3, 0]],            // blink
+  lid: [[-5, -1], [-4, -1], [-3, -1], [-4, 0], [-3, 0]],   // heavy lid over the pupil
+  squint: [[-5, -1], [-4, 0], [-5, 1]],           // >  (mirrored: <)
+  dot: [[-4, 0]],
+  spark: [[-4, -2], [-5, -1], [-4, -1], [-3, -1], [-4, 0]],
+};
+const GAZE = new Set(["open", "wide", "dot", "lid", "spark"]);
+const MOUTH = {
+  smile: [[-2, 2], [-1, 3], [0, 3], [1, 3], [2, 2]],
+  small: [[-1, 2], [0, 3], [1, 2]],
+  grin: [[-2, 2], [-1, 2], [0, 2], [1, 2], [2, 2], [-1, 3], [0, 3], [1, 3]],
+  cat: [[-2, 2], [-1, 3], [0, 2], [1, 3], [2, 2]],            // ω
+  o: [[0, 1], [-1, 2], [1, 2], [0, 3]],
+  yawn: [[-1, 1], [0, 1], [1, 1], [-1, 2], [1, 2], [-1, 3], [0, 3], [1, 3]],
+  flat: [[-1, 3], [0, 3], [1, 3]],
+  pout: [[-2, 3], [-1, 2], [0, 2], [1, 2], [2, 3]],
+  wavy: [[-2, 3], [-1, 2], [0, 3], [1, 2], [2, 3]],
+  none: [],
+};
+const GLYPH = {
+  z: [[0, 0], [1, 0], [2, 0], [1, 1], [0, 2], [1, 2], [2, 2]],
+  note: [[1, 0], [2, 0], [1, 1], [1, 2], [0, 2]],
+  plus: [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]],
+  dot: [[0, 0]],
+  drop: [[0, 0], [0, 1]],
+  puff: [[0, 0], [-1, -1], [-1, 0]],
+};
+function pset(buf, gx, gy, v) { const i = at(gx, gy); if (i >= 0 && v > buf[i]) buf[i] = v; }
+function renderPose(p, buf) {
+  buf.fill(0);
+  if (p.body) for (let i = 0; i < N; i++) buf[i] = p.body * (0.65 + 0.35 * (1 - V[i]));
+  const L = p.lvl ?? 1, ax = FACE_AX + (p.dx | 0), ay = FACE_AY + (p.dy | 0);
+  const eye = (shape, side) => {
+    const pts = EYE[shape]; if (!pts) return;
+    const g = GAZE.has(shape), lx = g ? (p.lx | 0) : 0, ly = g ? (p.ly | 0) : 0;
+    for (const [x, y] of pts) pset(buf, ax + side * x + lx, ay + y + ly, L);
+  };
+  eye(p.eyeL ?? p.eye ?? "open", 1);
+  eye(p.eyeR ?? p.eye ?? "open", -1);
+  for (const [x, y] of MOUTH[p.mouth ?? "smile"]) pset(buf, ax + x, ay + y, L * (p.mouthLvl ?? 1));
+  if (p.blush) for (const s of [1, -1]) for (const x of [-6, -5]) pset(buf, ax + s * x, ay + 2, Math.min(1, p.blush) * 0.5 * L);
+  if (p.extras) for (const e of p.extras) {
+    if (e.v <= 0) continue;
+    for (const [x, y] of GLYPH[e.g]) pset(buf, Math.round(e.x) + x, Math.round(e.y) + y, Math.min(1, e.v) * L);
+  }
+}
+
+/* little behaviour helpers */
+function blinker(st, dt) {
+  if (st.bt === undefined) st.bt = 1 + st.rnd() * 2;
+  st.bt -= dt;
+  if (st.bt < 0) { st.bl = 0.13; st.bt = 2 + st.rnd() * 3.5; if (st.rnd() < 0.2) st.dbl = 0.3; }
+  if (st.dbl > 0) { st.dbl -= dt; if (st.dbl <= 0) st.bl = 0.13; }
+  if (st.bl > 0) { st.bl -= dt; return true; }
+  return false;
+}
+function glancer(st, dt) {
+  st.gt = (st.gt ?? 1.5) - dt;
+  if (st.gt < 0) { st.gt = 2.5 + st.rnd() * 4; const r = st.rnd(); st.lx = r < 0.3 ? -1 : r < 0.6 ? 1 : 0; st.ly = st.rnd() < 0.25 ? -1 : 0; }
+  return [st.lx | 0, st.ly | 0];
+}
+function sparkles(st, dt, rate, a) {
+  st.sp = st.sp || [];
+  if (st.rnd() < dt * rate) st.sp.push({ x: a.x0 + st.rnd() * (a.x1 - a.x0), y: a.y0 + st.rnd() * (a.y1 - a.y0), t: 0 });
+  st.sp = st.sp.filter(s => (s.t += dt) < 0.45);
+  return st.sp.map(s => ({ g: s.t > 0.12 && s.t < 0.3 ? "plus" : "dot", x: s.x, y: s.y, v: 1 - s.t / 0.45 }));
+}
+
+/* =====================================================================
+   Face behaviours: update(st, dt, ctx) -> pose. `dur` = one-shot timeline.
+   ctx = { mood, energy, lookAtYou, poked }
+   ===================================================================== */
+const FB = {
+  idle: {
+    label: "Happy Pine", blurb: "Just hanging out: blinks, glances around, the odd blush.",
+    update(st, dt, c) {
+      const blink = blinker(st, dt);
+      const [lx, ly] = c.lookAtYou ? [0, 0] : glancer(st, dt);
+      st.bp = (st.bp ?? 5) - dt; if (st.bp < 0) { st.bp = 6 + st.rnd() * 6; st.bd = 2; }
+      if (st.bd > 0) st.bd -= dt;
+      return {
+        eye: blink ? "closed" : c.lookAtYou ? "wide" : "open", lx, ly,
+        mouth: c.mood > 0.75 ? "cat" : c.mood < 0.3 ? "flat" : "smile",
+        blush: 0.2 + (st.bd > 0 ? 0.6 * Math.sin(Math.PI * st.bd / 2) : 0) + (c.lookAtYou ? 0.3 : 0),
+        body: 0.05 + 0.02 * Math.sin(st.t * 1.3),
+      };
+    },
+  },
+  giggle: {
+    label: "Giggle", blurb: "^ ^ eyes, a big grin and a bouncy little giggle.",
+    update(st, dt) {
+      const burst = st.t % 1.6 < 0.9;
+      return { eye: "happy", mouth: burst ? "grin" : "cat", dy: burst && Math.floor(st.t * 9) % 2 ? -1 : 0, blush: 0.5, body: 0.06,
+               extras: sparkles(st, dt, 3, { x0: -8, x1: 8, y0: 10, y1: 19 }) };
+    },
+  },
+  sleep: {
+    label: "Sleepy zzz", blurb: "Eyes shut, slow breathing glow, little z's floating up.",
+    update(st, dt) {
+      st.z = st.z || []; st.zt = (st.zt ?? 0.4) - dt;
+      if (st.zt < 0) { st.zt = 1.9; st.z.push({ x: 3, y: 11, t: 0 }); }
+      st.z = st.z.filter(z => (z.t += dt) < 3.2);
+      const breath = 0.5 + 0.5 * Math.sin(st.t * 2 * Math.PI / 4.8);
+      const dream = Math.sin(st.t * 0.23) > 0.8;
+      return {
+        eye: "sleep", mouth: dream ? "cat" : "small", mouthLvl: 0.6, lvl: 0.7 + 0.25 * breath, blush: 0.15,
+        body: 0.02 + 0.05 * breath,
+        extras: st.z.map(z => ({ g: z.t < 1.7 ? "z" : "dot", x: z.x + z.t * 0.9, y: z.y - z.t * 1.6, v: z.t < 2.4 ? 0.75 : 0.75 * (3.2 - z.t) / 0.8 })),
+      };
+    },
+  },
+  stir: {
+    label: "Five more minutes", blurb: "Half-opens an eye, grumbles, rolls over and keeps sleeping.", dur: 2.4,
+    update(st) {
+      const t = st.t;
+      if (t < 0.7) return { eyeL: "lid", eyeR: "sleep", mouth: "pout", body: 0.03 };
+      if (t < 1.5) return { eye: "closed", mouth: "wavy", dx: Math.sin(t * 20) > 0 ? 1 : 0, body: 0.03 };
+      return { eye: "sleep", mouth: "small", mouthLvl: 0.6, dx: 1, body: 0.03, lvl: 0.8 };
+    },
+  },
+  wink: {
+    label: "Wink", blurb: "Looks right at you, winks, and the top of the tree sparkles.", dur: 2.8,
+    update(st) {
+      const t = st.t, ex = [];
+      if (t > 0.8 && t < 1.7) {
+        const k = Math.sin(Math.PI * (t - 0.8) / 0.9);
+        for (const [x, y] of [[0, 1], [-1, 2], [1, 2], [0, 2], [0, 3]]) ex.push({ g: "dot", x, y, v: k });
+      }
+      return { eyeL: "open", eyeR: t > 0.8 && t < 1.5 ? "happy" : "open", mouth: t > 0.8 ? "grin" : "smile",
+               blush: t > 0.8 ? 0.45 : 0.15, body: 0.05, extras: ex };
+    },
+  },
+  sing: {
+    label: "Singing", blurb: "Mouth opens and closes to a tune; music notes float up.",
+    update(st, dt) {
+      st.n = st.n || []; st.nt = (st.nt ?? 0) - dt;
+      if (st.nt < 0) { st.nt = 0.9; st.n.push({ x: st.rnd() < 0.5 ? -6 : 4, y: 12, t: 0, ph: st.rnd() * 6 }); }
+      st.n = st.n.filter(n => (n.t += dt) < 2.6);
+      const beat = Math.floor(st.t * 3.2) % 4;
+      return {
+        eye: "happy", mouth: beat % 2 === 0 ? "o" : "small", dx: Math.round(Math.sin(st.t * 1.6)), blush: 0.3, body: 0.06,
+        extras: st.n.map(n => ({ g: "note", x: n.x + Math.sin(n.t * 3 + n.ph) * 0.8, y: n.y - n.t * 1.8, v: n.t < 2 ? 0.8 : 0.8 * (2.6 - n.t) / 0.6 })),
+      };
+    },
+  },
+  sneeze: {
+    label: "Snowflake sneeze", blurb: "A flake drifts onto Pine's nose... a... a... ACHOO!", dur: 7.5,
+    update(st) {
+      const t = st.t, ex = [];
+      if (t < 3.1) ex.push({ g: "dot", x: Math.round(Math.sin(t * 2.2) * 1.2), y: 1 + t * (15 / 3.1), v: 1 });
+      else if (t < 4.3) ex.push({ g: "dot", x: 0, y: 16, v: 1 });
+      if (t >= 4.3 && t < 5.3) {
+        const k = (t - 4.3) / 1.0;
+        for (let a = 0; a < 12; a++) { const g = a / 12 * 2 * Math.PI; ex.push({ g: "dot", x: Math.cos(g) * (1 + k * 9), y: 16 + Math.sin(g) * (1 + k * 6), v: 1 - k }); }
+      }
+      if (t < 3.0) return { eye: "open", ly: t < 2.3 ? -1 : 0, mouth: "o", body: 0.05, extras: ex };
+      if (t < 4.3) return { eye: "squint", mouth: "wavy", dx: Math.round((st.rnd() - 0.5) * 1.3), body: 0.05, extras: ex };
+      if (t < 4.8) return { eye: "squint", mouth: "yawn", dy: -1, body: 0.22, extras: ex };
+      return { eye: "happy", mouth: "grin", blush: 0.5, body: 0.06, extras: ex };
+    },
+  },
+  doze: {
+    label: "Dozing off", blurb: "Eyelids get heavy, head nods, jolts awake... and drifts off again.", dur: 8,
+    update(st) {
+      const t = st.t;
+      if (t < 1.2) return { eye: "open", mouth: "small", body: 0.05 };
+      if (t < 2.5) return { eye: "lid", mouth: "small", body: 0.04 };
+      if (t < 3.8) return { eye: "sleep", mouth: "small", dy: 1, body: 0.035 };
+      if (t < 4.4) return { eye: "wide", mouth: "o", dy: -1, body: 0.08 };
+      if (t < 5.6) return { eye: "open", lx: t < 5 ? -1 : 1, mouth: "flat", body: 0.05 };
+      if (t < 6.6) return { eye: "lid", mouth: "small", body: 0.04 };
+      return { eye: "sleep", mouth: "small", mouthLvl: 0.6, dy: 1, body: 0.03, lvl: 0.8 };
+    },
+  },
+  grumpy: {
+    label: "Grumpy", blurb: "Turned away and pouting. Poking makes it worse; petting helps.",
+    update(st, dt, c) {
+      st.pt = (st.pt ?? 1.5) - dt; st.puffs = st.puffs || [];
+      if (st.pt < 0 || (c.poked && !st.wasPoked)) { st.pt = 3 + st.rnd() * 2; st.puffs.push({ t: 0 }); }
+      st.wasPoked = c.poked;
+      st.puffs = st.puffs.filter(p => (p.t += dt) < 0.8);
+      return { eye: c.poked ? "squint" : "lid", lx: -1, mouth: "pout", dx: -2, body: 0.03,
+               extras: st.puffs.map(p => ({ g: "puff", x: -7 - p.t * 1.5, y: 17 - p.t * 2, v: 1 - p.t / 0.8 })) };
+    },
+  },
+  excited: {
+    label: "Excited", blurb: "Sparkly eyes, bouncing, a big '!': he wants to show you something.", dur: 2.6,
+    update(st, dt) {
+      const t = st.t, ex = sparkles(st, dt, 6, { x0: -9, x1: 9, y0: 9, y1: 20 });
+      if (Math.floor(t * 4) % 2 === 0) for (const [x, y] of [[0, 0], [0, 1], [0, 2], [0, 4]]) ex.push({ g: "dot", x, y: 7 + y, v: 1 });
+      return { eye: Math.floor(t * 6) % 3 === 0 ? "spark" : "wide", mouth: "grin", dy: Math.floor(t * 10) % 2 ? -1 : 0,
+               blush: 0.45, body: 0.09, extras: ex };
+    },
+  },
+  surprised: {
+    label: "Oops!", blurb: "Caught daydreaming: eyes wide, 'O!', a nervous sweat drop.", dur: 1.4,
+    update(st) {
+      const t = st.t;
+      if (t < 0.55) return { eye: "wide", mouth: "o", dy: -1, body: 0.08 };
+      return { eye: "open", lx: 1, mouth: "wavy", body: 0.06, extras: [{ g: "drop", x: 7, y: 12 + Math.min(2, (t - 0.55) * 3), v: 0.9 }] };
+    },
+  },
+  morning: {
+    label: "Good morning", blurb: "Eyes open slowly, a big yawn, then a stretch all the way up to the star.", dur: 6.2,
+    update(st) {
+      const t = st.t;
+      if (t < 1.0) return { eye: "sleep", mouth: "small", mouthLvl: 0.5, body: 0.02 + t * 0.02, lvl: 0.6 };
+      if (t < 1.8) return { eye: "lid", mouth: "small", body: 0.04 };
+      if (t < 3.4) return { eye: "closed", mouth: "yawn", dy: -1, body: 0.05 };
+      if (t < 4.4) return { eye: t > 3.9 && t < 4.02 ? "closed" : "open", mouth: "smile", body: 0.06, blush: 0.2 };
+      return { eye: "happy", mouth: "grin", body: 0.06, blush: 0.3, extras: [{ g: "plus", x: 0, y: 12 - (t - 4.4) / 1.8 * 10, v: 1 }] };
+    },
+  },
+  pet: {
+    label: "Being petted", blurb: "Content ^ ^ eyes, a little cat smile, cheeks glowing.",
+    update(st) { return { eye: "happy", mouth: "cat", blush: 0.65 + 0.3 * Math.sin(st.t * 3), body: 0.07 + 0.02 * Math.sin(st.t * 2) }; },
+  },
+  hug: {
+    label: "Squeezed!", blurb: "A hug: > < eyes, huge grin, full blush and a burst of sparkles.", dur: 2.2,
+    update(st, dt) {
+      return { eye: "squint", mouth: "grin", blush: 1, dy: Math.floor(st.t * 8) % 2 ? -1 : 0, body: 0.1,
+               extras: sparkles(st, dt, 12, { x0: -9, x1: 9, y0: 9, y1: 20 }) };
+    },
+  },
+  squirm: {
+    label: "Squirm", blurb: "Squeezed while grumpy: > < and a wobbly protest.", dur: 1.5,
+    update(st) { return { eye: "squint", mouth: "wavy", dx: Math.round(Math.sin(st.t * 25)), body: 0.04 }; },
+  },
+  tickled: {
+    label: "Tickled", blurb: "A giggle fit: fast bouncing, sparkles everywhere.", dur: 3,
+    update(st, dt) {
+      return { eye: st.t % 0.8 < 0.6 ? "happy" : "squint", mouth: "grin", dy: Math.floor(st.t * 12) % 2 ? -1 : 0,
+               dx: Math.round(Math.sin(st.t * 7)), blush: 0.7, body: 0.08, extras: sparkles(st, dt, 9, { x0: -9, x1: 9, y0: 9, y1: 20 }) };
+    },
+  },
+  peek: {
+    label: "Peek", blurb: "Mid-show, Pine's face pops in to check you're still watching.", dur: 2.2,
+    update(st, dt) { const b = blinker(st, dt); return { eye: b ? "closed" : "open", lx: st.t < 1.1 ? 1 : 0, mouth: "small", blush: 0.3 }; },
+  },
+  yawn: {
+    label: "Yawn", blurb: "Tired on the job: the show dims while Pine yawns.", dur: 1.8,
+    update() { return { eye: "closed", mouth: "yawn" }; },
+  },
+};
+const FACE_MENU = ["idle", "giggle", "sing", "wink", "sneeze", "sleep", "stir", "doze", "grumpy", "excited",
+                   "surprised", "morning", "pet", "hug", "tickled", "peek"];
+
+/* =====================================================================
+   Scenes: a light show (optionally with a face overlay) or a face
+   ===================================================================== */
+const RATE = 1 / 50;                       // firmware frame period
+let sceneSeed = 1;
+function showScene(k, o = {}) {
+  return { kind: "show", k, inst: instance(k), level: o.level ?? 1, speed: o.speed ?? 1, acc: 0, frozen: 0, overlay: null,
+           tgt: new Float32Array(N), fbuf: new Float32Array(N) };
+}
+function faceScene(beh) {
+  const sc = { kind: "face", beh, st: { t: 0, rnd: makeRng(0xabc123 ^ sceneSeed++ * 7919) },
+               tgt: new Float32Array(N), fbuf: new Float32Array(N), done: false };
+  return sc;
+}
+function faceCtx() {
+  return { mood: brain.E.mood, energy: brain.E.energy, lookAtYou: brain.lookT > 0, poked: brain.pokedT > 0 };
+}
+function stepFace(sc, st, beh, dt, levelMul = 1) {
+  const pose = FB[beh].update(st, dt, faceCtx());
+  st.t += dt;
+  if (levelMul !== 1) pose.lvl = (pose.lvl ?? 1) * levelMul;
+  renderPose(pose, sc.tgt);
+  const k = Math.min(1, dt * 22);
+  for (let i = 0; i < N; i++) sc.fbuf[i] += (sc.tgt[i] - sc.fbuf[i]) * k;
+  return FB[beh].dur !== undefined && st.t >= FB[beh].dur;
+}
+function stepScene(sc, dt, out) {
+  if (sc.kind === "show") {
+    const inst = sc.inst;
+    if (sc.frozen > 0) sc.frozen -= dt;
+    else { sc.acc += dt * sc.speed; while (sc.acc >= RATE) { sc.acc -= RATE; stepInst(inst); } }
+    for (let i = 0; i < N; i++) out[i] = inst.out[i] * sc.level;
+    const ov = sc.overlay;
+    if (ov) {
+      const fin = stepFace(sc, ov.st, ov.beh, dt);
+      const env = Math.min(1, ov.st.t / 0.35, Math.max(0, (FB[ov.beh].dur ?? 2) - ov.st.t) / 0.35);
+      for (let i = 0; i < N; i++) out[i] = Math.max(out[i] * (1 - 0.55 * env), sc.fbuf[i] * env);
+      if (fin) sc.overlay = null;
+    }
+  } else {
+    if (stepFace(sc, sc.st, sc.beh, dt)) sc.done = true;
+    out.set(sc.fbuf);
+  }
+}
+
+/* =====================================================================
+   Transitions between scenes
+   ===================================================================== */
+const TRANS = {
+  fade: { label: "Soft crossfade", dur: 1.0 },
+  iris: { label: "Star iris", dur: 1.4 },
+  blink: { label: "Sleepy blink", dur: 1.6 },
+  sparkle: { label: "Sparkle dissolve", dur: 0.9 },
+  snow: { label: "Snow blanket", dur: 2.4 },
+  jelly: { label: "Jelly wobble", dur: 1.4 },
+};
+const ANG = new Float32Array(N);
+for (let i = 0; i < N; i++) ANG[i] = Math.atan2(LY[i] - SC[1], LX[i] - SC[0]);
+const starR = th => 2.5 + 2.1 * Math.pow(0.5 + 0.5 * Math.cos(5 * (th + Math.PI / 2)), 1.1);
+const VC = (Y0 + Y1) / 2, VH = (Y1 - Y0) / 2 + 1;
+function applyTransition(type, f, A, B, out, t, seed) {
+  const s = smooth(0, 1, f);
+  switch (type) {
+    case "iris": {
+      const scale = s * 24;
+      for (let i = 0; i < N; i++) {
+        const R = starR(ANG[i]) * scale, d = DS[i];
+        out[i] = d < R - 1.6 ? B[i] : d < R + 0.4 ? Math.max(B[i], 0.9) : A[i];
+      }
+      break;
+    }
+    case "blink": {
+      for (let i = 0; i < N; i++) {
+        const d = Math.abs(LY[i] - VC) / VH;
+        if (f < 0.5) { const c = smooth(0, 0.5, f); out[i] = d < 1 - c ? A[i] : d < 1 - c + 0.07 ? 0.35 : 0; }
+        else { const o = smooth(0.55, 1, f); out[i] = d < o ? B[i] : d < o + 0.07 ? 0.35 : 0; }
+      }
+      break;
+    }
+    case "sparkle": {
+      for (let i = 0; i < N; i++) { const h = hash1(i * 7 + seed); out[i] = h < f - 0.1 ? B[i] : h < f ? 1 : A[i]; }
+      break;
+    }
+    case "snow": {
+      for (let i = 0; i < N; i++) {
+        const flake = 0.45 + 0.2 * hash1(i + seed);
+        if (f < 0.5) { const c = smooth(0, 0.5, f) * 1.1; out[i] = V[i] > 1 - c ? flake : A[i]; }
+        else { const m = smooth(0.5, 1, f) * 1.1; out[i] = V[i] < m - 0.05 ? B[i] : flake * (1 - smooth(0.85, 1, f)); }
+      }
+      break;
+    }
+    case "jelly": {
+      const amp = 2.4 * Math.sin(Math.PI * f);
+      for (let i = 0; i < N; i++) {
+        const sh = Math.round(Math.sin(GY[i] * 0.9 + t * 14) * amp);
+        const a = at(GX[i] - sh, GY[i]), b = at(GX[i] + sh, GY[i]);
+        out[i] = (a >= 0 ? A[a] : 0) * (1 - s) + (b >= 0 ? B[b] : 0) * s;
+      }
+      break;
+    }
+    default:
+      for (let i = 0; i < N; i++) out[i] = A[i] * (1 - s) + B[i] * s;
+  }
+}
+
+const eng = { cur: null, tr: null, lastType: "", A: new Float32Array(N), B: new Float32Array(N), t: 0 };
+function goTo(scene, type = "fade", dur) {
+  if (eng.tr) { eng.cur = eng.tr.to; eng.tr = null; }
+  if (!eng.cur) { eng.cur = scene; return; }
+  if (eng.cur.kind === "face" && scene.kind === "face") {     // face -> face: morph, no wipe
+    eng.cur.beh = scene.beh; eng.cur.st = scene.st; eng.cur.done = false; return;
+  }
+  if (type === "random") {
+    const pool = ["fade", "iris", "sparkle", "snow", "jelly"].filter(x => x !== eng.lastType);
+    type = pool[Math.floor(Math.random() * pool.length)];
+  }
+  eng.lastType = type;
+  eng.tr = { to: scene, type, dur: dur ?? TRANS[type]?.dur ?? 1, t: 0, seed: Math.floor(Math.random() * 1e6) };
+}
+function engineTick(dt, out) {
+  eng.t += dt;
+  stepScene(eng.cur, dt, eng.A);
+  if (eng.tr) {
+    const tr = eng.tr;
+    stepScene(tr.to, dt, eng.B);
+    tr.t += dt;
+    const f = clamp(tr.t / tr.dur);
+    applyTransition(tr.type, f, eng.A, eng.B, out, eng.t, tr.seed);
+    if (f >= 1) { eng.cur = tr.to; eng.tr = null; }
+  } else out.set(eng.A);
+}
+const sceneNow = () => eng.tr ? eng.tr.to : eng.cur;
+const sceneDone = () => { const s = sceneNow(); return s.kind === "face" && s.done; };
+
+/* =====================================================================
+   Touch star: simulated capacitance signal + the firmware's gesture classifier
+   (hover < light touch < firm press < squeeze = pinched front and back)
+   ===================================================================== */
+const TH = { hover: 0.08, touch: 0.35, press: 0.65, squeeze: 1.0, max: 1.5 };
+const touch = {
+  raw: 0, script: null, scriptT: 0, down: false, mod: "", mm: null,
+  touching: false, t0: 0, pressed: false, squeezed: false, petting: false,
+  hoverT: 0, hovering: false, offT: 0, taps: [], last: "—", lastT: -9, now: 0,
+};
+const SCRIPTS = {
+  hover: t => t < 2.2 ? 0.22 : null,
+  tap: t => t < 0.15 ? 0.5 : t < 0.35 ? 0 : null,
+  pet: t => t < 2.6 ? 0.5 + 0.05 * Math.sin(t * 9) : t < 2.8 ? 0 : null,
+  press: t => t < 0.9 ? 0.82 : t < 1.1 ? 0 : null,
+  squeeze: t => t < 1.0 ? 1.32 : t < 1.2 ? 0 : null,
+  tickle: t => t < 1.25 ? (t % 0.3 < 0.12 ? 0.5 : 0) : null,
+};
+function sensorTarget() {
+  if (touch.script) {
+    const v = touch.script(touch.now - touch.scriptT);
+    if (v === null) touch.script = null; else return v;
+  }
+  if (touch.down) return touch.mod === "squeeze" ? 1.32 : touch.mod === "press" ? 0.82 : 0.5;
+  if (touch.mm) {
+    const d = Math.hypot(touch.mm[0] - SC[0], touch.mm[1] - SC[1]);
+    return d < 24 ? 0.3 * Math.exp(-Math.max(0, d - 4.6) / 5) : 0;
+  }
+  return 0;
+}
+function emit(g) { touch.last = g; touch.lastT = touch.now; brain.onGesture(g); }
+function touchTick(dt) {
+  touch.now += dt;
+  const target = sensorTarget();
+  touch.raw += (target - touch.raw) * Math.min(1, dt * 30) + (Math.random() - 0.5) * 0.008;
+  if (touch.raw < 0) touch.raw = 0;
+  const r = touch.raw, now = touch.now;
+  if (!touch.touching && r >= TH.touch) {
+    Object.assign(touch, { touching: true, t0: now, pressed: false, squeezed: false, petting: false });
+  }
+  if (touch.touching) {
+    const d = now - touch.t0;
+    if (r >= TH.squeeze && !touch.squeezed && d > 0.08) { touch.squeezed = true; emit("squeeze"); }
+    else if (r >= TH.press && r < TH.squeeze && !touch.pressed && !touch.squeezed && d > 0.15) { touch.pressed = true; emit("press"); }
+    if (!touch.pressed && !touch.squeezed && !touch.petting && d > 0.6) { touch.petting = true; emit("petStart"); }
+    if (r < TH.touch * 0.8) {
+      touch.touching = false;
+      if (touch.petting) { touch.petting = false; emit("petEnd"); }
+      else if (!touch.pressed && !touch.squeezed && d < 0.45) {
+        touch.taps = touch.taps.filter(x => now - x < 1.4); touch.taps.push(now);
+        if (touch.taps.length >= 3) { touch.taps = []; emit("tickle"); } else emit("tap");
+      }
+    }
+    touch.hoverT = 0;
+  } else if (r >= TH.hover) {
+    touch.hoverT += dt; touch.offT = 0;
+    if (touch.hoverT > 0.3 && !touch.hovering) { touch.hovering = true; emit("hover"); }
+  } else {
+    touch.offT += dt;
+    if (touch.offT > 1) { touch.hovering = false; touch.hoverT = 0; }
+  }
+}
+
+/* =====================================================================
+   Pine's brain: emotions + a small state machine
+   ===================================================================== */
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const LINES = {
+  drift: ["...ooh, a cloud", "la la la~", "*thinking about snow*", "hmm hm hmm", "what was I doing?"],
+  reminded: ["Oh! Right, my job!", "Oops, back to work!", "I wasn't sleeping!", "the lights! yes!"],
+  nextShow: ["ooh, next one!", "how about this?", "coming right up!", "watch this!"],
+  selfNext: ["and now...", "ta-da!", "new one!"],
+  peek: ["hi!", "...am I doing this right?", "*peeks*", "you still there?"],
+  stir: ["five more minutes...", "mmh... no...", "*snore*", "not yet..."],
+  groggy: ["okay, okay... I'm up", "*yaaawn* fine...", "so... sleepy..."],
+  grumpy: ["hmph.", "not now.", "hey!", "leave me alone!"],
+  forgive: ["...fine.", "okay, I'm not mad", "hmph... hi"],
+  excited: ["Look look look!", "I made this for you!", "ooh, watch this!", "you're back!"],
+  hug: ["eee!", "*squish*", "hehe, hug!", "warm!"],
+  squirm: ["mmph! ...okay", "hey! ...hmph"],
+  tickle: ["hahaha!", "hehehe stop!", "that tickles!"],
+  tooMuch: ["st-stop it!", "enough!!"],
+  pet: ["hehe~", "mmm...", "*purrs in LED*"],
+  hover: ["oh, hi!", "hehe, hi", "hello!"],
+  dark: ["it's getting dark...", "*yawn* lights out?"],
+  light: ["the lights!", "is it morning?"],
+  sleepHover: ["zzz... *smiles*"],
+  doze: ["just resting my LEDs...", "*nods off*"],
+  morning: ["*yaaawn* g'morning!"],
+  sneeze: ["a... a... ACHOO!"],
+};
+function loadBond() { try { const v = parseFloat(localStorage.getItem("pixelpine.bond")); return Number.isFinite(v) ? v : 0.3; } catch { return 0.3; } }
+function saveBond(v) { try { localStorage.setItem("pixelpine.bond", v.toFixed(3)); } catch { /* storage unavailable */ } }
+
+const brain = {
+  E: { energy: 0.75, focus: 0.9, mood: 0.65, annoy: 0, excite: 0.3, bond: loadBond() },
+  state: "morning", stateT: 0, bt: 0, clock: 10, ambient: true, manual: false,
+  lastTouch: 0, thought: "", thoughtT: 0, pokedT: 0, lookT: 0,
+  recent: [], favorite: Math.floor(Math.random() * ANIMS.length), nextShowT: 20,
+  ddT: 0, ddLimit: 30, behT: 0, behDur: 10, sneezeAt: -999, wakeTaps: [], tickles: [], reluctant: 0,
+  ret: null, saveT: 0,
+
+  say(key) { this.thought = LINES[key] ? pick(LINES[key]) : key; this.thoughtT = 3.2; },
+  set(state) { this.state = state; this.stateT = 0; },
+  pickShow() {
+    let k, n = 0;
+    do { k = Math.floor(Math.random() * ANIMS.length); } while (this.recent.includes(k) && n++ < 20);
+    this.recent.push(k); if (this.recent.length > 4) this.recent.shift();
+    return k;
+  },
+  work(o = {}) {
+    this.set("work");
+    const k = o.k ?? this.pickShow();
+    const tired = 0.55 + 0.45 * this.E.energy;
+    goTo(showScene(k, { level: tired * (this.reluctant > 0 ? 0.72 : 1), speed: this.reluctant > 0 ? 0.8 : 1 }),
+         o.trans ?? "random", o.dur);
+    this.nextShowT = 18 + Math.random() * 8;
+    if (o.focus) this.E.focus = o.focus;
+  },
+  face(beh, state, trans = "fade") { if (state) this.set(state); goTo(faceScene(beh), trans); },
+  overlay(beh, freeze = 0) {
+    const sc = sceneNow(); if (sc.kind !== "show" || sc.overlay) return false;
+    sc.overlay = { beh, st: { t: 0, rnd: makeRng(sceneSeed++ * 104729) } };
+    if (freeze) sc.frozen = freeze;
+    return true;
+  },
+  daydream(trans = "jelly") {
+    this.set("daydream"); this.ddT = 0; this.ddLimit = 25 + Math.random() * 20;
+    this.nextDaydream(trans);
+  },
+  nextDaydream(trans = "fade") {
+    const E = this.E, w = [["idle", 3], ["giggle", 2 * E.mood], ["sing", 2 * E.mood * E.energy], ["wink", 1.5 * E.bond + 0.3]];
+    if (this.bt - this.sneezeAt > 120) w.push(["sneeze", 0.8]);
+    let sum = w.reduce((a, [, x]) => a + x, 0), r = Math.random() * sum, beh = "idle";
+    for (const [b, x] of w) { if ((r -= x) <= 0) { beh = b; break; } }
+    if (beh === "sneeze") { this.sneezeAt = this.bt; this.say("sneeze"); }
+    else if (beh !== "idle" && Math.random() < 0.5) this.say("drift");
+    this.behT = 0; this.behDur = 8 + Math.random() * 7;
+    this.face(beh, null, trans);
+  },
+  react(beh, say) {
+    if (!this.ret) this.ret = { state: this.state, scene: sceneNow() };
+    this.set("react");
+    if (say) this.say(say);
+    goTo(faceScene(beh), "fade", 0.3);
+  },
+  endReact() {
+    const r = this.ret; this.ret = null;
+    if (!r) return this.daydream("fade");
+    if (r.state === "work" && r.scene.kind === "show") { this.set("work"); goTo(r.scene, "fade", 0.6); return; }
+    if (r.state === "grumpy" || this.E.annoy > 0.75) return this.face("grumpy", "grumpy");
+    if (r.state === "sleep") return this.face("sleep", "sleep");
+    this.set("daydream"); this.ddT = 0; this.nextDaydream("fade");
+  },
+  toSleep() { this.face("sleep", "sleep", "blink"); },
+  toDoze() { this.say("doze"); this.face("doze", "doze", "blink"); },
+  reminded() { this.say("reminded"); this.face("surprised", "reminded", "fade"); },
+  excited(line) { this.say(line ?? "excited"); this.face("excited", "excited", "fade"); },
+  wakeGroggy() {
+    this.say("groggy"); this.reluctant = 60; this.E.mood -= 0.08;
+    if (this.E.energy < 0.4) { this.E.annoy += 0.2; this.say("I was sleeping!"); }   // woken while really tired
+    this.set("morning"); goTo(faceScene("morning"), "fade");
+  },
+
+  tick(dt) {
+    const E = this.E, dtB = dt * this.clock;
+    this.thoughtT -= dt; this.pokedT -= dt; this.lookT -= dt; this.reluctant -= dt;
+    this.saveT += dt; if (this.saveT > 5) { this.saveT = 0; saveBond(E.bond); }
+    if (this.manual) return;
+    // feelings run on Pine's clock (dtB); pacing of shows, daydreams and reactions stays real time (dt)
+    this.bt += dt; this.stateT += dt;
+    const dark = this.ambient ? 1 : 2;
+    const lonely = this.bt - this.lastTouch > 120 ? 0.1 : 0;
+    const base = 0.45 + 0.35 * E.bond - 0.45 * E.annoy - lonely;
+    E.mood += (base - E.mood) * 0.005 * dtB;
+    E.annoy -= 0.004 * dtB;
+    E.excite -= E.excite * 0.03 * dtB;
+    if (this.bt - this.lastTouch > 600) E.bond -= 0.00005 * dtB;
+    if (touch.petting) { E.mood += 0.15 * dt; E.annoy -= 0.25 * dt; E.bond += 0.004 * dt; }
+    for (const k in E) E[k] = clamp(E[k], k === "bond" ? 0.05 : 0, 1);
+
+    const s = this.state;
+    if (E.annoy > 0.78 && !["grumpy", "sleep", "stir", "react"].includes(s)) { this.say("grumpy"); this.face("grumpy", "grumpy"); return; }
+    switch (s) {
+      case "morning":
+        if (sceneDone()) {
+          if (this.reluctant > 0) this.work({ trans: "blink" });
+          else if (E.mood > 0.6 && E.energy > 0.5) this.excited();
+          else this.work({ trans: "iris" });
+        }
+        break;
+      case "work": {
+        E.energy -= 0.0006 * dtB * dark;
+        E.focus -= 0.002 * dtB * (1.25 - 0.5 * E.bond);
+        if ((this.nextShowT -= dt) < 0) { if (Math.random() < 0.4) this.say("selfNext"); this.work(); break; }
+        const r = Math.random();
+        if (E.energy < 0.35 && r < dt * 0.03) { if (this.overlay("yawn")) this.say("*yaaawn*"); }
+        else if (r < dt * 0.02 * (1 - E.focus)) { if (this.overlay("peek")) this.say("peek"); }
+        else if (Math.random() < dt * 0.01 * (1 - E.focus)) { if (this.overlay("surprised", 1.4)) this.say("oops!"); }
+        if (E.energy < 0.12) { this.toDoze(); break; }
+        if (E.focus < 0.25 && Math.random() < dt * 0.12) { this.say("drift"); this.daydream("jelly"); }
+        break;
+      }
+      case "daydream":
+        E.focus += 0.003 * dtB; E.energy -= 0.0004 * dtB * dark;
+        this.ddT += dt; this.behT += dt;
+        if (sceneDone() || (FB[sceneNow().beh]?.dur === undefined && this.behT > this.behDur)) this.nextDaydream();
+        if (this.ddT > this.ddLimit || E.energy < 0.15) {
+          if (E.energy < 0.3) this.toDoze();
+          else if (E.mood > 0.65 && E.energy > 0.5 && Math.random() < 0.5) this.excited();
+          else if (E.focus > 0.6) this.reminded();
+          else this.ddT = this.ddLimit - 8;
+        }
+        break;
+      case "doze": if (sceneDone()) this.toSleep(); break;
+      case "stir": if (sceneDone()) this.face("sleep", "sleep"); break;
+      case "sleep":
+        E.energy += 0.005 * dtB * (this.ambient ? 1 : 1.5) * (touch.petting ? 2 : 1);
+        if (E.energy >= 1 && this.ambient && this.stateT > 20) { this.say("morning"); this.face("morning", "morning", "blink"); }
+        break;
+      case "grumpy":
+        if (E.annoy < 0.3) { this.say("forgive"); this.set("daydream"); this.ddT = 0; this.nextDaydream("fade"); }
+        break;
+      case "excited": if (sceneDone()) this.work({ k: this.favorite, trans: "iris", focus: 1 }); break;
+      case "reminded": if (sceneDone()) this.work({ trans: "sparkle", focus: 1 }); break;
+      case "react":
+        if (touch.petting && sceneNow().beh === "pet") break;
+        if (sceneDone() || (sceneNow().beh === "pet" && !touch.petting)) this.endReact();
+        break;
+    }
+  },
+
+  onGesture(g) {
+    if (this.manual) return;
+    const E = this.E, s = this.state;
+    const wasLonely = this.bt - this.lastTouch > 90;
+    this.lastTouch = this.bt;
+    switch (g) {
+      case "hover":
+        E.excite += 0.1; E.bond += 0.003;
+        if (s === "daydream") {
+          this.lookT = 3;
+          if (wasLonely && E.mood > 0.45 && E.energy > 0.4) this.excited("you're back!");
+          else if (Math.random() < 0.6) this.say("hover");
+        } else if (s === "work") { if (E.bond > 0.35 && this.overlay("peek")) this.say("peek"); }
+        else if (s === "sleep") this.say("sleepHover");
+        else if (s === "grumpy") E.annoy -= 0.05;
+        break;
+      case "tap":
+        if (s === "work") { E.focus = Math.min(1, E.focus + 0.25); E.mood += 0.02; this.say("nextShow"); this.work({ trans: "sparkle" }); }
+        else if (s === "daydream") this.reminded();
+        else if (s === "sleep" || s === "doze" || s === "stir") {
+          E.annoy += 0.15;
+          this.wakeTaps = this.wakeTaps.filter(x => this.bt - x < 30); this.wakeTaps.push(this.bt);
+          if (E.energy > 0.7 || this.wakeTaps.length >= 3) { this.wakeTaps = []; this.wakeGroggy(); }
+          else { this.say("stir"); this.face("stir", "stir"); }
+        } else if (s === "grumpy") { E.annoy += 0.08; this.pokedT = 0.6; this.say("grumpy"); }
+        else if (s === "excited") this.work({ k: this.favorite, trans: "iris", focus: 1 });
+        else if (s === "morning") this.work({ trans: "iris" });
+        break;
+      case "press":
+        if (s === "work") { this.say("nextShow"); this.work({ trans: "sparkle" }); }
+        else if (s === "daydream") this.reminded();
+        else if (s === "sleep" || s === "doze" || s === "stir") { E.annoy += 0.35; this.wakeGroggy(); }
+        else if (s === "grumpy") { E.annoy += 0.2; this.pokedT = 0.8; this.say("HEY!"); }
+        break;
+      case "squeeze":
+        if (s === "sleep" || s === "doze" || s === "stir") { E.energy += 0.2; E.annoy += 0.1; this.react("surprised", "!!"); this.ret = { state: "daydream", scene: null }; }
+        else if (E.annoy >= 0.5 || s === "grumpy") { E.annoy -= 0.2; this.react("squirm", pick(LINES.squirm)); }
+        else { E.mood += 0.25; E.bond += 0.05; E.excite += 0.3; this.react("hug", pick(LINES.hug)); }
+        break;
+      case "tickle":
+        this.tickles = this.tickles.filter(x => this.bt - x < 25); this.tickles.push(this.bt);
+        if (this.tickles.length >= 3 || s === "grumpy") { E.annoy += 0.45; this.say("tooMuch"); if (s !== "grumpy") this.react("squirm"); }
+        else if (s === "sleep") { E.energy += 0.15; this.react("tickled", pick(LINES.tickle)); this.ret = { state: "daydream", scene: null }; }
+        else { E.mood += 0.12; E.excite += 0.2; E.bond += 0.02; this.react("tickled", pick(LINES.tickle)); }
+        break;
+      case "petStart":
+        if (s === "sleep") this.say("mmm...");
+        else if (s === "grumpy") { /* he stays turned away until the annoyance melts */ }
+        else if (s !== "react") { this.say("pet"); this.react("pet"); }
+        break;
+      case "petEnd":
+        break;
+    }
+  },
+
+  setAmbient(on) {
+    this.ambient = on;
+    if (this.manual) return;
+    if (!on && (this.state === "work" || this.state === "daydream")) { this.say("dark"); this.E.energy -= 0.15; }
+    if (on && this.state === "sleep" && Math.random() < 0.6) { this.say("light"); this.face("morning", "morning", "blink"); }
+  },
+};
+const STATE_UI = {
+  work: ["Pine is working", "work"], daydream: ["Pine is daydreaming", "dream"], sleep: ["Pine is asleep", "sleep"],
+  stir: ["Pine won't wake up", "sleep"], doze: ["Pine is dozing off", "sleep"], grumpy: ["Pine is grumpy", "grumpy"],
+  excited: ["Pine is excited", "dream"], reminded: ["Pine got caught", "dream"], morning: ["Pine is waking up", "sleep"],
+  react: ["Pine is reacting", "dream"],
+};
+
+/* =====================================================================
+   Hardware model: gamma -> BCM levels -> per-slot current sharing
+   ===================================================================== */
+const MODEL = { V: 5.0, Vf: 2.75, R: 100, Rd: 30, Imcu: 3.0, GAMMA: 2.2, SLOT_US: 2 };
+const iLed = k => (MODEL.V - MODEL.Vf) / ((MODEL.R + MODEL.Rd) * (k + 1)) * 1000;   // mA per LED, k share the anode
+const I1 = iLed(1);
+const T = new Float32Array(N), D = new Float32Array(N), Lin = new Float32Array(N), disp = new Float32Array(N);
+const Q = new Int32Array(N);
+const phasePeak = new Float32Array(16), phaseAvg = new Float32Array(16);
+function scan(bits) {                     // fills Lin (rel. to one LED alone at 100 %), phase currents
+  const W = (1 << bits) - 1;
+  Lin.fill(0); phasePeak.fill(0); phaseAvg.fill(0);
+  for (let a = 0; a < 16; a++) {
+    const idx = byAnode[a];
+    for (let b = 0; b < bits; b++) {
+      let k = 0;
+      for (const j of idx) if ((Q[j] >> b) & 1) k++;
+      if (!k) continue;
+      const I = iLed(k), w = (1 << b) / W;
+      for (const j of idx) if ((Q[j] >> b) & 1) Lin[j] += w * I / I1;
+      phaseAvg[a] += w * k * I;
+      if (k * I > phasePeak[a]) phasePeak[a] = k * I;
+    }
+  }
+}
+function hardware() {
+  const bits = state.bits, W = (1 << bits) - 1, g = MODEL.GAMMA;
+  for (let i = 0; i < N; i++) T[i] = Math.pow(clamp(mix[i] * state.master), g);
+  if (state.mode === "comp") {
+    const cap = iLed(8) / I1;             // aim every LED at the level 8 sharers can reach
+    for (let i = 0; i < N; i++) D[i] = T[i];
+    for (let it = 0; it < 4; it++) {
+      for (let i = 0; i < N; i++) Q[i] = Math.round(clamp(D[i]) * W);
+      scan(bits);
+      for (let i = 0; i < N; i++) {
+        if (Q[i] > 0) D[i] = clamp(T[i] * cap / (Lin[i] / (Q[i] / W)));
+      }
+    }
+  }
+  if (state.mode !== "comp") for (let i = 0; i < N; i++) Q[i] = Math.round(T[i] * W);
+  else for (let i = 0; i < N; i++) Q[i] = Math.round(clamp(D[i]) * W);
+  scan(bits);
+  const E = state.exposure;
+  for (let i = 0; i < N; i++) {
+    disp[i] = state.mode === "ideal" ? clamp(mix[i] * state.master)
+      : Math.pow(1 - Math.exp(-Lin[i] * E), 1 / g);
+  }
+  let avg = 0, peak = 0;
+  for (let a = 0; a < 16; a++) { avg += phaseAvg[a] / 16; peak = Math.max(peak, phasePeak[a]); }
+  return { avg, peak, W };
+}
+
+/* =====================================================================
+   Renderer
+   ===================================================================== */
+const cv = document.getElementById("tree");
+const ctx = cv.getContext("2d");
+let view = { s: 10, ox: 0, oy: 0, dpr: 1 };
+const OUTLINE = MAP.outline, STAR = MAP.star;
+const TRUNK_PARTS = [   // positions from gen_pcb.py (mm, rotation deg, w, h, kind)
+  { x: -6.2, y: 62.4, w: 4.4, h: 6.5, k: "ic" },
+  { x: 7.7 - 0.3, y: 63.8, w: 7.3, h: 8.9, k: "usb" },
+  { x: -6.2, y: 67.0, w: 1.0, h: 0.5, k: "c" }, { x: 2.4, y: 66.6, w: 0.8, h: 1.6, k: "c" },
+  { x: 2.4, y: 60.9, w: 0.5, h: 1.0, k: "r" }, { x: 2.4, y: 62.9, w: 0.5, h: 1.0, k: "r" },
+  { x: -9.5, y: 58.2, w: 1.0, h: 0.5, k: "r" },   // R19, ESD resistor for the star
+  ...Array.from({ length: 16 }, (_, i) => ({ x: -9 + i * 1.2, y: 56.3, w: 0.5, h: 1.0, k: "r" })),
+];
+const glow = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const g = c.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,240,214,1)"); gr.addColorStop(0.12, "rgba(255,212,150,0.95)");
+  gr.addColorStop(0.35, "rgba(255,176,98,0.32)"); gr.addColorStop(0.7, "rgba(255,150,70,0.07)");
+  gr.addColorStop(1, "rgba(255,140,60,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return c;
+})();
+
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+  const s = Math.min(r.width / 60, r.height / 80);
+  view = { s, ox: r.width / 2, oy: (r.height - 76 * s) / 2 + 2 * s, dpr, w: r.width, h: r.height };
+}
+new ResizeObserver(resize).observe(cv);
+const X = x => view.ox + x * view.s, Yp = y => view.oy + y * view.s;
+
+function pathPoly(pts) { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Yp(y)) : ctx.moveTo(X(x), Yp(y))); ctx.closePath(); }
+
+function draw(now) {
+  const { s, dpr, w, h } = view;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, w, h);
+  // gentle snow drifting in the room behind the tree
+  const tt = now / 1000;
+  ctx.fillStyle = "rgba(236,242,255,0.28)";
+  for (const f of BG_SNOW) {
+    const y = reduced ? f.y : ((f.y + tt * f.vy + 6) % 84) - 6;
+    const x = f.x + (reduced ? 0 : Math.sin(tt * 0.6 + f.ph) * 1.2);
+    ctx.globalAlpha = 0.35 + 0.65 * f.r / 0.42;
+    ctx.beginPath(); ctx.arc(X(x), Yp(y), Math.max(0.8, f.r * s), 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // table
+  const tableY = Yp(70);
+  const tg = ctx.createLinearGradient(0, tableY, 0, h);
+  tg.addColorStop(0, "#161d1a"); tg.addColorStop(1, "#0a0e0c");
+  ctx.fillStyle = tg; ctx.fillRect(0, tableY, w, h - tableY);
+  ctx.fillStyle = "rgba(255,255,255,0.035)"; ctx.fillRect(0, tableY, w, 1);
+
+  // board
+  pathPoly(OUTLINE);
+  const pg = ctx.createLinearGradient(0, Yp(0), 0, Yp(70));
+  pg.addColorStop(0, "#21503a"); pg.addColorStop(1, "#173a28");
+  ctx.fillStyle = pg; ctx.fill();
+  ctx.lineWidth = Math.max(1, 0.35 * s); ctx.strokeStyle = "#0d2418"; ctx.stroke();
+  // stand fin, seen end-on
+  ctx.fillStyle = "#123021"; ctx.fillRect(X(-0.8), Yp(60), 1.6 * s, 10 * s);
+
+  // trunk parts
+  for (const p of TRUNK_PARTS) {
+    const x0 = X(p.x - p.w / 2), y0 = Yp(p.y - p.h / 2);
+    if (p.k === "ic") {
+      ctx.fillStyle = "#b9b7b0";
+      for (let j = 0; j < 10; j++) { ctx.fillRect(X(p.x - 3.2), Yp(p.y - 2.925 + j * 0.65) - 0.1 * s, 6.4 * s, 0.3 * s); }
+      ctx.fillStyle = "#18191b"; ctx.fillRect(x0, y0, p.w * s, p.h * s);
+      ctx.fillStyle = "#2c2d30"; ctx.beginPath(); ctx.arc(X(p.x - 1.3), Yp(p.y - 2.3), 0.35 * s, 0, 7); ctx.fill();
+    } else if (p.k === "usb") {
+      const ug = ctx.createLinearGradient(x0, 0, x0 + p.w * s, 0);
+      ug.addColorStop(0, "#9b9a95"); ug.addColorStop(0.5, "#dcdad4"); ug.addColorStop(1, "#8d8c87");
+      ctx.fillStyle = ug; ctx.fillRect(x0, y0, p.w * s, p.h * s);
+      ctx.fillStyle = "#2a2a2a"; ctx.fillRect(X(p.x + p.w / 2 - 0.9), Yp(p.y - 3.4), 0.9 * s, 6.8 * s);
+    } else {
+      ctx.fillStyle = p.k === "c" ? "#b8986a" : "#1c1c1c";
+      ctx.fillRect(x0, y0, p.w * s, p.h * s);
+    }
+  }
+
+  // star (bare HASL pad)
+  const sf = state.starFlash;
+  ctx.save();
+  const wig = state.starHover && !reduced ? 1 + 0.05 * Math.sin(now / 70) : 1;
+  const squish = 1 - 0.12 * clamp((touch.raw - TH.touch) / (TH.squeeze - TH.touch));   // pressed star squishes
+  // hover halo: the sensor sees your finger before you touch
+  if (touch.raw > TH.hover * 0.6) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = Math.min(0.45, touch.raw * 0.9);
+    ctx.drawImage(glow, X(SC[0]) - 7 * s, Yp(SC[1]) - 7 * s, 14 * s, 14 * s);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
+  ctx.translate(X(SC[0]), Yp(SC[1])); ctx.scale(0.86 * wig * squish, 0.86 * wig * squish); ctx.rotate(state.starHover && !reduced ? 0.06 * Math.sin(now / 110) : 0);
+  ctx.translate(-X(SC[0]), -Yp(SC[1]));
+  pathPoly(STAR);
+  const sg = ctx.createLinearGradient(X(-4), Yp(0), X(4), Yp(8));
+  sg.addColorStop(0, "#e6e4dc"); sg.addColorStop(0.5, "#aeaca4"); sg.addColorStop(1, "#d3d1c9");
+  ctx.fillStyle = sg; ctx.fill();
+  ctx.restore();
+  if (sf > 0) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = sf * 0.8;
+    ctx.drawImage(glow, X(SC[0]) - 9 * s, Yp(SC[1]) - 9 * s, 18 * s, 18 * s);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
+
+  // LED packages (0603 at 45 deg)
+  const rot = MAP.led_rot * Math.PI / 180;
+  for (let i = 0; i < N; i++) {
+    const p = disp[i];
+    ctx.save();
+    ctx.translate(X(LX[i]), Yp(LY[i])); ctx.rotate(-rot);
+    ctx.fillStyle = "#cfcdc6"; ctx.fillRect(-0.8 * s, -0.4 * s, 1.6 * s, 0.8 * s);
+    const r = Math.round(226 + 29 * p), gch = Math.round(206 + 40 * p), b = Math.round(150 + 70 * p);
+    ctx.fillStyle = `rgb(${r},${gch},${b})`; ctx.fillRect(-0.5 * s, -0.36 * s, 1.0 * s, 0.72 * s);
+    if (i === state.hover) { ctx.strokeStyle = "#ffc47d"; ctx.lineWidth = 1.5; ctx.strokeRect(-1.0 * s, -0.6 * s, 2.0 * s, 1.2 * s); }
+    ctx.restore();
+  }
+  // light: additive glow
+  ctx.globalCompositeOperation = "lighter";
+  let spill = 0, spillX = 0;
+  for (let i = 0; i < N; i++) {
+    const p = disp[i]; if (p < 0.01) continue;
+    const x = X(LX[i]), y = Yp(LY[i]);
+    const r1 = (2.2 + 2.2 * p) * s;
+    ctx.globalAlpha = Math.min(1, p * 1.05);
+    ctx.drawImage(glow, x - r1, y - r1, 2 * r1, 2 * r1);
+    const r2 = 7.5 * s;
+    ctx.globalAlpha = p * 0.09;
+    ctx.drawImage(glow, x - r2, y - r2, 2 * r2, 2 * r2);
+    const wgt = p * (0.3 + V[i]);
+    spill += wgt; spillX += wgt * LX[i];
+  }
+  // light spilling onto the table, like the photo reference
+  if (spill > 0) {
+    const cx = X(spillX / spill), cy = Yp(71.5);
+    ctx.globalAlpha = Math.min(0.55, spill / 90);
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(1, 0.18);
+    const rr = 40 * s; ctx.drawImage(glow, -rr, -rr, 2 * rr, 2 * rr);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  if (brain.thoughtT > 0 && brain.thought) drawBubble(brain.thought, Math.min(1, brain.thoughtT / 0.4));
+}
+
+/* speech bubble next to Pine's face (preview only: the real tree has no screen) */
+function drawBubble(text, alpha) {
+  const s = view.s;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const fs = Math.max(12, 1.9 * s);
+  ctx.font = `600 ${fs}px Fredoka, Nunito, system-ui, sans-serif`;
+  const tw = ctx.measureText(text).width, padX = 0.7 * fs, hgt = fs * 1.9;
+  let bx = X(12), by = Yp(29) - hgt;
+  if (bx + tw + 2 * padX > view.w - 10) bx = Math.max(10, view.w - 10 - tw - 2 * padX);
+  ctx.fillStyle = "rgba(245,238,224,0.96)";
+  ctx.beginPath(); ctx.roundRect(bx, by, tw + 2 * padX, hgt, hgt / 2); ctx.fill();
+  const fx = X(5), fy = Yp(34);                       // trail of thought dots towards the face
+  for (const [k, r] of [[0.35, 0.5], [0.7, 0.32]]) {
+    ctx.beginPath(); ctx.arc(bx + (fx - bx) * k + 0.8 * fs * (1 - k), by + hgt + (fy - by - hgt) * k, r * s, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = "#1b140b"; ctx.textBaseline = "middle";
+  ctx.fillText(text, bx + padX, by + hgt / 2 + 1);
+  ctx.restore();
+}
+
+/* =====================================================================
+   UI wiring
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+
+// emotion meters
+const METERS = [["energy", "Energy", "#9cc7ff"], ["focus", "Focus", "#ffc47d"], ["mood", "Mood", "#8fe0bf"],
+                ["annoy", "Annoyance", "#ef7d6a"], ["excite", "Excitement", "#ff9fb2"], ["bond", "Bond", "#d9b8ff"]];
+const meterEls = {};
+for (const [k, label, c] of METERS) {
+  const l = document.createElement("label"); l.textContent = label;
+  const m = document.createElement("div"); m.className = "meter"; m.style.setProperty("--c", c);
+  const bar = document.createElement("i"); m.appendChild(bar);
+  const o = document.createElement("output");
+  $("meters").append(l, m, o);
+  meterEls[k] = [bar, o];
+}
+
+// touch sensor
+for (const [id, v] of [["thHover", TH.hover], ["thTouch", TH.touch], ["thPress", TH.press], ["thSqueeze", TH.squeeze]])
+  $(id).style.left = (v / TH.max * 100) + "%";
+document.querySelectorAll("[data-g]").forEach(b => b.addEventListener("click", () => {
+  touch.script = SCRIPTS[b.dataset.g]; touch.scriptT = touch.now;
+}));
+const GESTURE_NAME = { hover: "hover", tap: "tap", press: "press", squeeze: "squeeze", tickle: "tickle", petStart: "pet", petEnd: "pet" };
+
+// preview chips
+function chip(parent, text, cls, onClick) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip " + cls; b.textContent = text; b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", onClick); parent.appendChild(b); return b;
+}
+let manualSel = null;
+const showChips = ANIMS.map((a, k) => chip($("showChips"), a.name, "", () => manualPick("s" + k)));
+const faceChips = FACE_MENU.map(f => chip($("faceChips"), FB[f].label, "face", () => manualPick("f" + f)));
+$("trans").innerHTML = `<option value="random">Pine's choice</option>` +
+  Object.entries(TRANS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
+function markChips() {
+  showChips.forEach((b, k) => b.setAttribute("aria-pressed", manualSel === "s" + k ? "true" : "false"));
+  faceChips.forEach((b, j) => b.setAttribute("aria-pressed", manualSel === "f" + FACE_MENU[j] ? "true" : "false"));
+}
+function manualPick(sel) {
+  brain.manual = true; manualSel = sel; markChips();
+  $("modeLabel").textContent = "you pick"; $("auto").classList.add("primary");
+  const tr = $("trans").value;
+  if (sel[0] === "s") goTo(showScene(+sel.slice(1)), tr);
+  else { const f = sel.slice(1); if (sceneNow().kind === "face") sceneNow().done = false; goTo(faceScene(f), tr); }
+}
+$("auto").addEventListener("click", () => {
+  if (!brain.manual) return;
+  brain.manual = false; manualSel = null; markChips();
+  $("modeLabel").textContent = "Pine decides"; $("auto").classList.remove("primary");
+  brain.reminded();
+});
+$("auto").classList.remove("primary");
+
+// playback + hardware settings
+function setPlaying(p) { state.playing = p; $("play").textContent = p ? "Pause" : "Play"; }
+$("play").addEventListener("click", () => setPlaying(!state.playing));
+$("speed").addEventListener("input", e => { state.speed = +e.target.value; $("speedOut").textContent = state.speed.toFixed(2) + "×"; });
+$("master").addEventListener("input", e => { state.master = +e.target.value; $("masterOut").textContent = Math.round(state.master * 100) + "%"; });
+$("bits").addEventListener("change", e => { state.bits = +e.target.value; });
+$("exposure").addEventListener("input", e => { state.exposure = +e.target.value; $("exposureOut").textContent = state.exposure.toFixed(1); });
+$("ambient").addEventListener("change", e => brain.setAmbient(e.target.checked));
+$("clock").addEventListener("change", e => { brain.clock = +e.target.value; });
+$("forget").addEventListener("click", () => { brain.E.bond = 0.3; saveBond(0.3); brain.say("...who are you?"); });
+const MODE_NOTES = {
+  ideal: "What the animation asks for: no quantisation, no current sharing.",
+  raw: "Firmware PWM levels with gamma 2.2; LEDs sharing a scan slot share one pin's current, so busy areas dim.",
+  comp: "Firmware pre-scales each LED's duty to cancel the sharing sag (costs peak brightness).",
+};
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"));
+  $("modeNote").textContent = MODE_NOTES[m];
+  $("exposure").disabled = m === "ideal";
+}
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+setMode("raw");
+
+const bars = $("bars");
+const barEls = Array.from({ length: 16 }, (_, a) => {
+  const d = document.createElement("div"); d.className = "bar";
+  d.innerHTML = `<i></i><em>L${a}</em>`; bars.appendChild(d); return d;
+});
+const BAR_MAX = 24;
+$("limit").style.bottom = (20 / BAR_MAX * 100) + "%";
+
+window.addEventListener("keydown", e => {
+  if (e.target.closest && e.target.closest("input, select, button")) return;
+  if (e.key === " ") { e.preventDefault(); setPlaying(!state.playing); }
+  else if (e.key === "ArrowRight") { touch.script = SCRIPTS.tap; touch.scriptT = touch.now; }
+});
+
+// pointer on the canvas: the star is the touch pad, LEDs show their wiring on hover
+function toMM(ev) {
+  const r = cv.getBoundingClientRect();
+  return [((ev.clientX - r.left) - view.ox) / view.s, ((ev.clientY - r.top) - view.oy) / view.s];
+}
+const onStar = ([x, y]) => Math.hypot(x - SC[0], y - SC[1]) < 5.2;
+const tip = $("tip");
+cv.addEventListener("pointermove", ev => {
+  const m = toMM(ev);
+  touch.mm = m;
+  state.starHover = onStar(m);
+  cv.classList.toggle("over-star", state.starHover);
+  let best = -1, bd = 1.3;
+  for (let i = 0; i < N; i++) { const d = Math.hypot(LX[i] - m[0], LY[i] - m[1]); if (d < bd) { bd = d; best = i; } }
+  state.hover = best;
+  if (best < 0) { tip.hidden = true; return; }
+  const r = cv.getBoundingClientRect(), st = cv.parentElement.getBoundingClientRect();
+  tip.style.left = (X(LX[best]) + r.left - st.left) + "px";
+  tip.style.top = (Yp(LY[best]) + r.top - st.top) + "px";
+  tip.textContent = `D${best + 1} · anode L${AN[best]} → cathode L${CA[best]} · level ${Q[best]}/${(1 << state.bits) - 1}`;
+  tip.hidden = false;
+});
+cv.addEventListener("pointerleave", () => { touch.mm = null; touch.down = false; state.hover = -1; state.starHover = false; tip.hidden = true; });
+cv.addEventListener("pointerdown", ev => {
+  if (!onStar(toMM(ev))) return;
+  ev.preventDefault();
+  try { cv.setPointerCapture(ev.pointerId); } catch { /* not all pointers can be captured */ }
+  touch.down = true;
+  touch.mod = ev.ctrlKey || ev.metaKey || ev.altKey || ev.button === 2 ? "squeeze" : ev.shiftKey ? "press" : "";
+  state.starFlash = 1;
+});
+cv.addEventListener("pointerup", () => { touch.down = false; });
+cv.addEventListener("pointercancel", () => { touch.down = false; });
+cv.addEventListener("contextmenu", ev => { if (onStar(toMM(ev))) ev.preventDefault(); });
+
+// stage + rail text (only touch the DOM when something changed)
+const shown = {};
+function setText(id, v) { if (shown[id] !== v) { shown[id] = v; $(id).textContent = v; } }
+function stageUI() {
+  const sc = sceneNow();
+  let eyebrow, mood;
+  if (brain.manual) { eyebrow = "Preview"; mood = "manual"; }
+  else [eyebrow, mood] = STATE_UI[brain.state] || ["Pine", "work"];
+  let name, blurb;
+  if (sc.kind === "show") {
+    name = ANIMS[sc.k].name; blurb = ANIMS[sc.k].blurb;
+    if (sc.overlay) name += " + " + FB[sc.overlay.beh].label.toLowerCase();
+  } else { name = FB[sc.beh].label; blurb = FB[sc.beh].blurb; }
+  setText("nowEyebrow", eyebrow); $("nowEyebrow").dataset.mood = mood;
+  setText("nowName", name); setText("nowBlurb", blurb);
+  setText("pineState", brain.manual ? "paused while you preview" : eyebrow.replace("Pine is ", "").replace("Pine ", ""));
+  setText("thought", brain.thoughtT > 0 && brain.thought ? `“${brain.thought}”` : "");
+  for (const [k] of METERS) {
+    const v = brain.E[k];
+    meterEls[k][0].style.width = (v * 100).toFixed(0) + "%";
+    meterEls[k][1].textContent = (v * 100).toFixed(0);
+  }
+  const live = touch.now - touch.lastT < 1.3;
+  setText("gchip", live ? GESTURE_NAME[touch.last] || touch.last : touch.touching ? (touch.petting ? "pet" : "touch") : touch.hovering ? "hover" : "—");
+  $("gchip").classList.toggle("on", live || touch.touching);
+}
+
+/* ---------- main loop ---------- */
+let last = performance.now(), statT = 0, acc = 0, hw = null;
+brain.face("morning", "morning");
+for (let i = 0; i < 175; i++) { touchTick(RATE); brain.tick(RATE); engineTick(RATE, mix); }   // open mid-yawn
+if (reduced) { setPlaying(false); }
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (state.playing) {
+    acc += dt * state.speed;
+    while (acc >= RATE) {
+      acc -= RATE;
+      touchTick(RATE);
+      brain.tick(RATE);
+      if (brain.manual && sceneDone()) { const s = sceneNow(); s.st = faceScene(s.beh).st; s.done = false; }
+      engineTick(RATE, mix);
+    }
+  }
+  state.starFlash = Math.max(0, state.starFlash - dt * 1.8);
+  hw = hardware();
+  draw(now);
+  $("sensorBar").style.width = Math.min(100, touch.raw / TH.max * 100).toFixed(1) + "%";
+  statT += dt;
+  if (statT > 0.2) {
+    statT = 0;
+    stageUI();
+    const supply = hw.avg + MODEL.Imcu;
+    $("rI").textContent = supply.toFixed(1) + " mA";
+    $("rP").textContent = (supply * MODEL.V).toFixed(0) + " mW";
+    const pk = hw.peak;
+    $("rPk").innerHTML = pk.toFixed(1) + " mA" + (pk > 20 ? '<span class="pill bad">OVER</span>' : pk > 17 ? '<span class="pill warn">HIGH</span>' : '<span class="pill ok">OK</span>');
+    const hz = 1e6 / (16 * hw.W * MODEL.SLOT_US);
+    $("rHz").innerHTML = hz.toFixed(0) + " Hz" + (hz >= 100 ? '<span class="pill ok">OK</span>' : hz >= 60 ? '<span class="pill warn">FLICKER?</span>' : '<span class="pill bad">FLICKER</span>');
+    $("rMin").textContent = (Math.pow(1 / hw.W, 1 / MODEL.GAMMA) * 100).toFixed(1) + " % perceived";
+    for (let a = 0; a < 16; a++) {
+      const v = phasePeak[a];
+      barEls[a].firstChild.style.height = Math.min(100, v / BAR_MAX * 100) + "%";
+      barEls[a].classList.toggle("hot", v > 20);
+      barEls[a].title = `L${a}: peak ${v.toFixed(1)} mA, average ${phaseAvg[a].toFixed(2)} mA while active`;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+resize();
+stageUI();
+requestAnimationFrame(loop);
+</script>
