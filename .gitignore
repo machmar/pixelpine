@@ -18,3 +18,4 @@ __pycache__/
 
 # local tooling
 .claude/
+/presentation
