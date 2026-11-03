@@ -5,6 +5,7 @@
   python build.py host            PC test build      -> build/pine_host.exe (MSYS2 mingw64 gcc), used by test/
   python build.py bench           CPU-time bench, keeps SWD alive (read it with test/readbench.py)
   python build.py calib           product firmware with SWD kept alive (lines L8/L9 dark) for sensor calibration
+  python build.py diag            LED test patterns, 6 s each: all off / top LED full / top LED dim / all at 64
   python build.py flash [target]  build, then program the board through the J-Link (../flash/flash.py)
 """
 import glob
@@ -39,17 +40,17 @@ def run(cmd):
     return r.stdout
 
 
-def arm(showcycle=False, bench=False, calib=False):
+def arm(showcycle=False, bench=False, calib=False, diag=False):
     gcc = tool("arm-none-eabi-gcc", ["C:/Program Files (x86)/Arm GNU Toolchain arm-none-eabi/*/bin/arm-none-eabi-gcc.exe"])
     bindir = os.path.dirname(gcc)
     os.makedirs(os.path.join(HERE, "build"), exist_ok=True)
-    name = "showcycle" if showcycle else "bench" if bench else "calib" if calib else "pixelpine"
+    name = "showcycle" if showcycle else "bench" if bench else "calib" if calib else "diag" if diag else "pixelpine"
     srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
     srcs += [] if showcycle else sorted({p.replace("\\", "/") for p in glob.glob("hw/*.c", root_dir=HERE)} - {"hw/main.c", "hw/scan.c"})
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",
          "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []),
-         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *srcs,
+         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *(["-DDIAG"] if diag else []), *srcs,
          "-nostartfiles", "-Thw/link.ld", "--specs=nano.specs", "-Wl,--gc-sections", "-Wl,--no-warn-rwx-segments",
          f"-Wl,-Map=build/{name}.map", "-lm", "-o", elf])
     run([os.path.join(bindir, "arm-none-eabi-objcopy"), "-O", "ihex", elf, f"build/{name}.hex"])
@@ -80,4 +81,5 @@ if __name__ == "__main__":
         subprocess.run([sys.executable, os.path.join(HERE, "..", "flash", "flash.py"), os.path.join(HERE, hexfile)],
                        check=True)
     else:
-        arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"])
+        arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"],
+            diag=args[:1] == ["diag"])

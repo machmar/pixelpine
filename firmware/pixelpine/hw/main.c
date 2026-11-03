@@ -94,6 +94,30 @@ int main(void) {
     bench_done = (uint32_t)pass + 1;
   }
 }
+#elif defined(DIAG)
+/* ghosting diagnosis: 6 s each, spoken order: all off / top LED full / top LED dim / whole tree evenly at 64 */
+static volatile uint8_t pat;
+static uint8_t diag_level(int i) {
+  switch (pat) {
+  case 1: return i == 1 ? 255 : 0;
+  case 2: return i == 1 ? 16 : 0;
+  case 3: return 64;
+  default: return 0;
+  }
+}
+int main(void) {
+  clock_init();
+  scan_init();
+  sense_init();
+  SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
+  uint16_t t = 0;
+  for (;;) {
+    while (!pending) __asm__ volatile("wfi");
+    pending = 0;
+    if (++t == 6 * FPS) { t = 0; pat = (uint8_t)((pat + 1) % 4); }
+    scan_show(diag_level);
+  }
+}
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;
