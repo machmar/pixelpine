@@ -4,8 +4,14 @@
 #include "pine.h"
 
 touch_t touch;
+volatile uint32_t touch_events;                 /* gesture count and last gesture, for the debugger */
+volatile uint8_t touch_event_last;
 
-static void emit(uint8_t g) { touch.last = g; touch.last_t = touch.now; brain_gesture(g); }
+static void emit(uint8_t g) {
+  touch.last = g; touch.last_t = touch.now;
+  touch_events++; touch_event_last = g;
+  brain_gesture(g);
+}
 
 void touch_tick(double raw, double dt) {
   touch.now += dt;

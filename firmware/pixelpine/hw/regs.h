@@ -37,7 +37,11 @@ typedef struct { volatile uint32_t CSR, RVR, CVR, CALIB; } systick_t;
 
 /* board: MODER with every charlieplex line a floating input (00) and every other pin analog (11) -
  * PA7 = touch star (ADC_IN7), PF2 = NRST, the rest are not bonded out on TSSOP-20 */
+#ifdef KEEP_SWD                                        /* bench / calib builds: PA13/PA14 stay SWD (AF) */
+#define IDLE_A 0xE8FFC000u
+#else
 #define IDLE_A 0xC0FFC000u                             /* lines PA0-PA6, PA12-PA14 */
+#endif
 #define IDLE_B 0xFFFF03FFu                             /* lines PB5-PB7 */
 #define IDLE_F 0xFFFFFCF0u                             /* lines PF0, PF1, PF4 */
 

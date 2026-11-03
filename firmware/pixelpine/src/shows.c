@@ -213,14 +213,15 @@ void show_frame(show_t *s, uint16_t *out) {
   case 4: { /* Candle flicker */
     double gust = 0.72 + 0.28 * smooth_d(0.22, 0.6, fxd(noise2(dq16(t * 0.35), dq16(7.3))));
     double y = t * 2.4;
-    noise_row_t r0, r1, r2, rg[GH];
+    noise_row_t r0, r1, r2, rg;                         /* LEDs come row by row: one row cache for the region */
     noise_row(&r0, dq16(y)); noise_row(&r1, dq16(y * 2.1 + 5)); noise_row(&r2, dq16(y * 4.3 + 11));
-    for (int g = 0; g < GH; g++) noise_row(&rg[g], (int32_t)(((LED_YBASE_Q + (((g + GYMIN) * PITCH_Q4) >> 2)) * 5898LL) >> 12));
+    int gcur = -1000;
     int32_t tr = dq16(t * 0.6);
     q12 gq = dq(gust);
     for (int i = 0; i < NLED; i++) {
       q12 n1 = qm(QC(0.55), noise2r(&r0, (i * 383255) >> 3)) + qm(QC(0.3), noise2r(&r1, ((i * 804834) >> 3) + (17 << 16))) + qm(QC(0.15), noise2r(&r2, ((i * 1647995) >> 3) + (3 << 16)));
-      q12 region = QC(0.85) + qm(QC(0.3), noise2r(&rg[led_gy[i] - GYMIN], ((LXQ(i) * 5898) >> 12) + tr) - QC(0.5));
+      if (led_gy[i] != gcur) { gcur = led_gy[i]; noise_row(&rg, (LYQ(i) * 5898) >> 12); }
+      q12 region = QC(0.85) + qm(QC(0.3), noise2r(&rg, ((LXQ(i) * 5898) >> 12) + tr) - QC(0.5));
       out[i] = (uint16_t)qclamp(qm(qm(QC(0.22) + qm(QC(0.62), n1), gq), region));
     }
     break;
@@ -311,22 +312,20 @@ void show_frame(show_t *s, uint16_t *out) {
   case 9: { /* Northern lights */
     uint32_t t27 = dturn(t * 0.27);
     int32_t x07 = dq16(t * 0.07), x05 = dq16(t * 0.05), y45 = dq16(t * 0.45);
-    noise_row_t r09, r13, rr[GH];
+    noise_row_t r09, r13, rr;                           /* LEDs come row by row: V and the rays row per grid row */
     noise_row(&r09, dq16(t * 0.09 + 3.1)); noise_row(&r13, dq16(t * 0.13));
-    for (int g = 0; g < GH; g++) {                     /* V of grid row g, as in LV */
-      int i0 = grid[g * GW + (0 - GXMIN)] != 255 ? grid[g * GW + (0 - GXMIN)] : 0;
-      noise_row(&rr[g], ((led_v[i0] * 224) / 10) - y45);
-    }
-    int32_t rs[GH];                                     /* 0.35 sin(V * 2.8 + t * 0.27) depends on the row only */
-    for (int g = 0; g < GH; g++) {
-      int i0 = grid[g * GW + (0 - GXMIN)] != 255 ? grid[g * GW + (0 - GXMIN)] : 0;
-      rs[g] = (qsin((uint32_t)led_v[i0] * 467275u + t27) * 22938) >> 12;
-    }
+    int gcur = -1000;
+    int32_t rs = 0;
     for (int i = 0; i < NLED; i++) {
-      int32_t w = ((LU(i) * 256) / 10) + rs[led_gy[i] - GYMIN];          /* U*1.6 + 0.35 sin(..), Q16 */
+      if (led_gy[i] != gcur) {
+        gcur = led_gy[i];
+        noise_row(&rr, ((led_v[i] * 224) / 10) - y45);
+        rs = (qsin((uint32_t)led_v[i] * 467275u + t27) * 22938) >> 12;     /* 0.35 sin(V * 2.8 + t * 0.27) */
+      }
+      int32_t w = ((LU(i) * 256) / 10) + rs;                               /* U*1.6 + 0.35 sin(..), Q16 */
       q12 r1 = ONE - qabs(2 * noise2r(&r09, w + x07) - ONE);
       q12 r2 = ONE - qabs(2 * noise2r(&r13, ((w * 6963) >> 12) - x05 + (40 << 16)) - ONE);
-      q12 rays = QC(0.35) + qm(QC(0.65), noise2r(&rr[led_gy[i] - GYMIN], LU(i) * 104));
+      q12 rays = QC(0.35) + qm(QC(0.65), noise2r(&rr, LU(i) * 104));
       q12 r22 = qm(r2, r2);
       out[i] = (uint16_t)qclamp(QC(0.025) + qm(qm(QC(0.95), qm(qm(r1, r1), r1)) + qm(QC(0.5), qm(r22, r22)), rays));
     }

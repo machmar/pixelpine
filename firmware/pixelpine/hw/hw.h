@@ -7,3 +7,10 @@ void scan_show(uint8_t (*level)(int));     /* 8-bit BCM level per LED, shown fro
 void scan_pause(void);
 void scan_resume(void);
 extern volatile uint32_t scan_frames;
+
+void sense_init(void);
+void sense_touch_isr(void);                     /* one touch sample, from the scan interrupt */
+uint16_t sense_touch_raw(void);                 /* the touch star over the last frame (lower = more capacitance) */
+double sense_touch_level(uint16_t raw);         /* -> the simulator's touch units */
+uint16_t store_load_bond(void);                 /* Pine's bond, Q16 */
+void store_save_bond(uint16_t bond);

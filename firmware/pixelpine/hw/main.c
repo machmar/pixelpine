@@ -13,6 +13,9 @@ void Reset_Handler(void) {
   uint32_t *s = &_data_load, *d = &_data_start;
   while (d < &_data_end) *d++ = *s++;                /* also copies the RAM-resident flash routine */
   for (d = &_bss_start; d < &_bss_end; d++) *d = 0;
+  uint32_t *sp;
+  __asm__ volatile("mov %0, sp" : "=r"(sp));
+  for (d = &_bss_end; d < sp - 16; d++) *d = 0x57AC57ACu;   /* stack paint: the debugger reads the high-water mark */
   main();
   for (;;) {}
 }
@@ -110,11 +113,34 @@ int main(void) {
   }
 }
 #else
+/* Room light: rev A can't sense it (README.md, "Room light"), so Pine stays in the simulator's default "lights on". */
+
+/* Pine's bond in flash: saved when it moved by >= 0.02, at most every 15 minutes (flash wear) */
+static uint16_t bond_saved;
+static uint32_t bond_frames;
+volatile uint8_t debug_save_now;                     /* set from the debugger to test the flash store */
+static void bond_tick(void) {
+  uint16_t b = (uint16_t)(brain.E.bond * 65535.0 + 0.5);
+  if (debug_save_now) { debug_save_now = 0; store_save_bond(b); bond_saved = b; bond_frames = 0; return; }
+  if (++bond_frames < 15u * 60u * FPS) return;
+  if ((b > bond_saved ? b - bond_saved : bond_saved - b) < 1311) return;   /* 0.02 */
+  store_save_bond(b);
+  bond_saved = b; bond_frames = 0;
+}
+
 int main(void) {
   clock_init();
   scan_init();
+  sense_init();
+  uint32_t seed = 0x9e3779b9u;                       /* each tree its own personality: ADC noise */
+  for (int k = 0; k < 16; k++) {
+    for (volatile int w = 0; w < 3000; w++) {}
+    seed = (seed ^ sense_touch_raw()) * 2654435761u;
+  }
+  g_rng = seed ? seed : 1;
+  bond_saved = store_load_bond();
   SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
-  pine_init(0.3);
+  pine_init(bond_saved / 65535.0);
   /* One 50 fps tick = one simulator frame, always. If a frame ran late (two heavy shows in a transition), the
    * next one updates the logic only and skips building the LED levels, so animation speed never drifts; the LEDs
    * then keep the previous levels for one more frame. */
@@ -122,10 +148,11 @@ int main(void) {
     while (!pending) __asm__ volatile("wfi");
     __asm__ volatile("cpsid i"); pending--; __asm__ volatile("cpsie i");
     uint32_t c0 = SYSTICK->CVR;
-    pine_begin(0);
+    pine_begin(sense_touch_level(sense_touch_raw()));
     if (!pending) scan_show(pine_level);
     else frames_late++;
     pine_end();
+    bond_tick();
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
     if (frame_cycles > frame_cycles_max) frame_cycles_max = frame_cycles;
   }

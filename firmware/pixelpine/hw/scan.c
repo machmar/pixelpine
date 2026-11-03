@@ -23,9 +23,7 @@ static const uint8_t line_pp[16] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0
 static const uint16_t spread8[256] = { R64(0), R64(64), R64(128), R64(192) };
 
 /* lines L0-L6 = PA0-PA6, L7-L9 = PA12-PA14, L10-L12 = PB5-PB7, L13/L14 = PF0/PF1, L15 = PF4 */
-#ifdef KEEP_SWD                                     /* bench build: PA13/PA14 stay SWD, lines L8/L9 stay dark */
-#undef IDLE_A
-#define IDLE_A (0xC0FFC000u | 0x28000000u)
+#ifdef KEEP_SWD                                     /* bench / calib builds: PA13/PA14 stay SWD, L8/L9 stay dark */
 #define LINE_MASK 0xFCFFu
 #else
 #define LINE_MASK 0xFFFFu
@@ -49,6 +47,7 @@ void TIM1_BRK_UP_TRG_COM_IRQHandler(void) {
   uint32_t m0 = (mk[0] | 1u << ph) & LINE_MASK, m1 = (mk[1] | 1u << ph) & LINE_MASK;
   uint32_t a0 = MODA(m0), b0 = MODB(m0), f0 = MODF(m0), a1 = MODA(m1), b1 = MODB(m1), f1 = MODF(m1);
   GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
+  sense_touch_isr();                                /* the touch star, while every line floats (~5 us) */
   uint8_t an = line_pp[ph];
   GPIOA->ODR = (an >> 4) == 0 ? 1u << (an & 15) : 0;
   GPIOB->ODR = (an >> 4) == 1 ? 1u << (an & 15) : 0;
