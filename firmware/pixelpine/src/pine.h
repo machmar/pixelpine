@@ -31,7 +31,7 @@ static inline int led_at(int gx, int gy) {
 }
 
 /* ---------- light shows (shows.c) ---------- */
-typedef struct { int32_t x, y; uint16_t vy, ph, sw; } flake_t;
+typedef struct { double x, y, vy, ph, sw; } flake_t;
 typedef struct { int32_t x, y; int16_t vy; uint16_t ph, a, life; } spark_t;
 typedef struct { int32_t x, y; int16_t vx, vy; uint8_t age; uint16_t life; } fwpt_t;
 typedef struct {
@@ -40,8 +40,8 @@ typedef struct {
   double t;                                 /* s.t, seconds */
   uint32_t n;                               /* frames stepped, t = n * FW_DT */
   union {
-    uint32_t tw[NLED];                      /* twinkle: frame count | step << 8 | (peak - 0.45) << 19 */
-    struct { uint16_t snow[NLED]; int8_t depth[GW]; uint8_t nfl, melt; uint16_t total; double spawn; flake_t fl[26]; } sn;
+    struct { uint32_t tw[NLED]; uint8_t twe[NLED]; };   /* twinkle: frame | step << 8 | (peak - 0.45) << 19; end frame */
+    struct { uint8_t lit[(NLED + 7) / 8]; int8_t depth[GW]; uint8_t nfl, melt; uint16_t total, mk; double spawn; flake_t fl[26]; } sn;
     struct { double x, y, h, sp, ph, w; } ff[7];
     struct { double spawn; uint8_t np; spark_t p[48]; } sp;
     struct { double next; uint8_t nrk, npt, nfl; struct { int32_t x, y, tx, ty; } rk[4]; fwpt_t pt[52];

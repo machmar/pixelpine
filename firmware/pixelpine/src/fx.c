@@ -1,4 +1,5 @@
 /* Fixed-point maths, see fx.h. */
+#include <math.h>
 #include "pine.h"
 
 q12 qsin(uint32_t ph) {
@@ -65,4 +66,13 @@ uint8_t gamma8(q12 v) {
   uint32_t lo = 0, hi = 256;                    /* gamma_thr[255] = 4097 > any value */
   while (lo < hi) { uint32_t m = (lo + hi) >> 1; if (gamma_thr[m] <= v) lo = m + 1; else hi = m; }
   return (uint8_t)lo;
+}
+
+double noise2d(double x, double y) {
+  double xi = floor(x), yi = floor(y), xf = x - xi, yf = y - yi;
+  double u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  int32_t X = (int32_t)xi, Y = (int32_t)yi;
+  double a = hash2u(X, Y) / 4294967296.0, b = hash2u(X + 1, Y) / 4294967296.0;
+  double c = hash2u(X, Y + 1) / 4294967296.0, d = hash2u(X + 1, Y + 1) / 4294967296.0;
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }

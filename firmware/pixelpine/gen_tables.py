@@ -89,12 +89,22 @@ T["int32_t row_half"] = [q12(row_half.get(g, 4)) for g in range(GYMIN, GYMAX + 1
 T["uint16_t led_th"] = [turns(t) >> 16 for t in TH]                  # garland / ornaments cone angle
 T["int16_t led_starr"] = [q12(star_r(a)) for a in ANG]           # star-iris radius at this LED's angle
 # light-show constants
-T["uint16_t ra_phi"] = [(turns(math.atan2(LX[i] - SC[0], LY[i] - SC[1])) >> 16) for i in range(N)]   # radar, 0 = down
+T["uint32_t ra_phi"] = [turns(math.atan2(LX[i] - SC[0], LY[i] - SC[1])) for i in range(N)]   # radar, 0 = down
 HD = [math.hypot(LX[i], LY[i] - 30) for i in range(N)]                              # heartbeat
-T["int16_t hb_d55"] = [q12(d / 55) for d in HD]
+T["uint16_t hb_d55"] = [int(round(d / 55 * 32768)) for d in HD]                    # Q15 seconds
 T["int16_t hb_k"] = [q12(1 - 0.45 * min(1, d / 35)) for d in HD]
 T["uint16_t ti_ph"] = [(turns(LX[i] * 0.55 + GY[i] * 0.9 + hash2(GY[i], 3) * 6.28) >> 16) for i in range(N)]   # tinsel
 T["uint16_t ti_c"] = [turns(hash1(i + 999) * 40) >> 16 for i in range(N)]
+
+# snowfall melt: the simulator keeps the snow layer in a Float32Array and melts it by dt*0.22*(0.4+(1-V)) per frame;
+# frames until each LED's snow reaches exactly 0, with that float32 rounding
+def melt_frames(v):
+    s, c, k = 1.0, 0.02 * 0.22 * (0.4 + (1 - v)), 0
+    while s > 0:
+        s = f32(max(0.0, s - c)); k += 1
+    return k
+T["uint16_t snow_k"] = [melt_frames(V[i]) for i in range(N)]
+T["float row_y"] = [f32(LY[0] - GY[0] * P + g * P) for g in range(GYMIN, GYMAX + 1)]   # LY of each grid row
 
 # --- shared maths tables ---
 T["uint16_t sin_tab"] = [int(round(math.sin(k / 1024 * 2 * math.pi) * 65535)) for k in range(257)]   # quarter wave, Q16
@@ -120,6 +130,8 @@ for key, vals in T.items():
     ctype, name = key.split()
     if ctype in ("int32_t",):
         vals = [to_i32(v & 0xFFFFFFFF) if v < 0 or v >= 1 << 31 else v for v in vals]
+    if ctype == "float":
+        vals = [repr(v) + ("f" if "." in repr(v) or "e" in repr(v) else ".0f") for v in vals]
     out.append(arr(ctype, name, vals))
     hdr.append(f"extern const {ctype} {name}[{len(vals)}];")
 hdr += ["",

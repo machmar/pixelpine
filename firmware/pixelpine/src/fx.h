@@ -34,8 +34,9 @@ q12 qgauss(q12 d);                        /* exp(-d*d) */
 q12 qpow16(q12 x), qpow12(q12 x), qpow14(q12 x);   /* x^1.6, x^1.2, x^1.4 for 0 <= x <= 1 */
 uint32_t isqrt32(uint32_t v);
 uint8_t gamma8(q12 v);                    /* round(255 * v^2.2): the simulator's 8-bit "raw scan" level */
-static inline double dsin(double r) { return qsin(dturn(r)) * (1.0 / 4096.0); }   /* Math.sin for per-frame use */
-static inline double dcos(double r) { return qcos(dturn(r)) * (1.0 / 4096.0); }
+double noise2d(double x, double y);       /* noise2 in double, for per-frame scalars (exact as the JS) */
+#define dsin sin                          /* per-frame scalars use libm, the same fdlibm algorithms as V8 */
+#define dcos cos
 
 /* the simulator's integer hashes and value noise (index.html "portable helpers"): hashes are bit-exact */
 uint32_t hash_u(uint32_t x);              /* hashU(x) * 2^32 */
