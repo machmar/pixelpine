@@ -93,14 +93,19 @@ void scan_init(void) {
  * together in one BCM slot share the anode pin: k of them get 2 / (k + 1) of a lone LED's current each, so a LED
  * that happens to be alone in a slot is up to 7.5x brighter than one of 15 (on the board: LEDs flaring up as the
  * radar sweeps). Every LED is aimed at the brightness 8 sharers reach (cap = 2/9) and its duty pre-scaled for the
- * slots it actually shares; 4 rounds, as in the simulator. */
+ * slots it actually shares; 4 rounds, as in the simulator.
+ * Built only with -DSHARE_COMP: on the board it made the levels jitter frame to frame (a visible flicker, ~3x the
+ * frame-to-frame wiggle of the raw scan in a PC comparison), and the simulator's own model does the same. */
+#ifdef SHARE_COMP
 static const uint16_t SHARE[16] = {          /* 2 / (k + 1), Q12 */
   4096, 4096, 2731, 2048, 1638, 1365, 1170, 1024, 910, 819, 745, 683, 630, 585, 546, 512 };
+#endif
 __attribute__((optimize("O2"))) void scan_show(uint8_t (*level)(int)) {
   const uint8_t *pl = phase_led, *pc = phase_cath;
   for (int a = 0; a < 16; a++, pl += 15, pc += 15) {
     uint8_t t[15], q[15];
     for (int j = 0; j < 15; j++) q[j] = t[j] = level(pl[j]);
+#ifdef SHARE_COMP                                   /* off: on the board it made levels jitter frame to frame */
     for (int it = 0; it < 4; it++) {
       uint8_t k[8] = { 0 };
       for (int j = 0; j < 15; j++) for (int b = 0; b < 8; b++) k[b] += (q[j] >> b) & 1u;
@@ -116,6 +121,7 @@ __attribute__((optimize("O2"))) void scan_show(uint8_t (*level)(int)) {
       }
       if (!changed) break;
     }
+#endif
     uint16_t m[8] = { 0 };
     for (int j = 0; j < 15; j++) {
       uint16_t cb = (uint16_t)(1u << pc[j]);
