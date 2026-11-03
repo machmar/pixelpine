@@ -13,16 +13,22 @@ void pine_init(double bond) {
   go_face(F_MORNING, T_FADE, -1);                   /* brain.face("morning", "morning") */
 }
 
-void pine_frame(double touch_raw, uint8_t *q) {
+void pine_begin(double touch_raw) {
   touch_tick(touch_raw, FW_DT);
   brain_tick(FW_DT);
   engine_tick(FW_DT);
-  for (int i = 0; i < NLED; i++) {
-    q12 v = qclamp(engine_px(i));
+}
+uint8_t pine_level(int i) {
+  q12 v = qclamp(engine_px(i));
 #ifdef PINE_HOST
-    pine_mix[i] = (uint16_t)v;
+  pine_mix[i] = (uint16_t)v;
 #endif
-    q[i] = gamma8(v);
-  }
-  engine_end_frame();
+  return gamma8(v);
+}
+void pine_end(void) { engine_end_frame(); }
+
+void pine_frame(double touch_raw, uint8_t *q) {
+  pine_begin(touch_raw);
+  for (int i = 0; i < NLED; i++) q[i] = pine_level(i);
+  pine_end();
 }

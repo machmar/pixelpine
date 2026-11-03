@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = ["src/fx.c", "src/shows.c", "src/face.c", "src/scene.c", "src/touch.c", "src/brain.c", "src/pine.c",
+SRC = ["src/fx.c", "src/jsmath.c", "src/shows.c", "src/face.c", "src/scene.c", "src/touch.c", "src/brain.c", "src/pine.c",
        "src/tables.c"]
 COMMON = ["-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-parameter", "-ffp-contract=off", "-Isrc"]
 
@@ -42,7 +42,7 @@ def arm(showcycle=False):
     bindir = os.path.dirname(gcc)
     os.makedirs(os.path.join(HERE, "build"), exist_ok=True)
     name = "showcycle" if showcycle else "pixelpine"
-    srcs = (["src/fx.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
+    srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
     srcs += [] if showcycle else sorted({p.replace("\\", "/") for p in glob.glob("hw/*.c", root_dir=HERE)} - {"hw/main.c", "hw/scan.c"})
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",

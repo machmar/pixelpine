@@ -62,13 +62,14 @@ void scan_init(void) {
   NVIC_ISER = 1u << TIM1_IRQn;
 }
 
-/* 8-bit levels -> cathode masks, one anode at a time (built aside, copied in with the interrupt held off) */
-void scan_show(const uint8_t *q) {
+/* 8-bit levels -> cathode masks, one anode at a time (built aside, copied in with the interrupt held off).
+ * level(i) gives LED i's level; each LED is asked once. */
+void scan_show(uint8_t (*level)(int)) {
   const uint8_t *pl = phase_led, *pc = phase_cath;
   for (int a = 0; a < 16; a++) {
     uint16_t m[8] = { 0 };
     for (int j = 0; j < 15; j++, pl++, pc++) {
-      uint8_t lvl = q[*pl];
+      uint8_t lvl = level(*pl);
       uint16_t cb = (uint16_t)(1u << *pc);
       for (int b = 0; b < 8; b++) if (lvl & (1u << b)) m[b] |= cb;
     }

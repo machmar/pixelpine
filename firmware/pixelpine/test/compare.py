@@ -71,6 +71,23 @@ def shows(seconds=30):
     return worst
 
 
+def math_check():
+    """Math.sin / Math.cos / % of the firmware (src/jsmath.c) against V8's, bit for bit."""
+    rng = np.random.default_rng(1)
+    t = np.cumsum(np.full(30000, 0.02))                     # the shows' clock: t += 0.02, as in the JS
+    xs = np.concatenate([rng.uniform(-3000, 3000, 100000), rng.uniform(-10, 10, 100000), t * 1.4, t * 2.6, t * 0.23,
+                         t * 2 * np.pi / 4.8, np.arange(-2000, 2000) * np.pi / 2, t])
+    ys = np.concatenate([rng.uniform(0.1, 20, 200000), np.full(len(xs) - 200000, 1.25)])
+    fi, fa, fb = (os.path.join(BUILD, n) for n in ("math_in.bin", "js_math.bin", "c_math.bin"))
+    np.stack([xs, ys], 1).astype("<f8").tofile(fi)
+    run([NODE, os.path.join(HERE, "simref.js"), "math", fi, fa])
+    run([HOST, "math", fi, fb])
+    a, b = np.fromfile(fa, "<u8").reshape(-1, 3), np.fromfile(fb, "<u8").reshape(-1, 3)
+    same = (a == b).mean(0) * 100
+    print(f"\nMath.sin {same[0]:.4f}%  Math.cos {same[1]:.4f}%  % {same[2]:.4f}% bit-identical ({len(xs)} arguments)")
+    return same.min()
+
+
 def runs():
     rec = N * 2 + 1 + 48
     dt = np.dtype([("mix", "<u2", N), ("state", "u1"), ("emo", "<f8", 6)])
@@ -102,8 +119,10 @@ def runs():
 
 
 if __name__ == "__main__":
-    what = sys.argv[1:] or ["shows", "runs"]
+    what = sys.argv[1:] or ["math", "shows", "runs"]
     run([sys.executable, os.path.join(ROOT, "build.py"), "host"])
+    if "math" in what:
+        math_check()
     if "shows" in what:
         shows()
     if "runs" in what:

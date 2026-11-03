@@ -109,7 +109,7 @@ void show_frame(show_t *s, uint16_t *out) {
         uint32_t inc = (w >> 8) & 0x7FFu, x16 = n * inc;
         if (n >= s->u.twe[i]) { s->u.tw[i] = 255; out[i] = QC(0.05); }
         else {
-          q12 e = qsin(x16 << 15), pk = (q12)(w >> 19) + 1843;       /* sin(pi * x) */
+          q12 e = qsin(x16 << 15), pk = (q12)(w >> 19) + 1843;       /* jsin(pi * x) */
           out[i] = (uint16_t)lerp16(QC(0.05) + qm(pk, qm(e, e)));
           s->u.tw[i] = (w & ~255u) | n;
         }
@@ -132,7 +132,7 @@ void show_frame(show_t *s, uint16_t *out) {
     for (int k = S->nfl - 1; k >= 0; k--) {
       flake_t *f = &S->fl[k];
       f->y += f->vy * dt;
-      double x = f->x + f->sw * sin(t * 1.4 + f->ph);
+      double x = f->x + f->sw * jsin(t * 1.4 + f->ph);
       int gx = (int)floor(x / PITCH + 0.5);
       int8_t bottom = (gx >= GXMIN && gx <= GXMAX) ? col_bottom[gx - GXMIN] : -1;
       uint8_t gone = 0;
@@ -211,7 +211,7 @@ void show_frame(show_t *s, uint16_t *out) {
     for (double k = kNow; k > kNow - 4; k--) {
       double age = t - k * period;
       if (age < 0) continue;
-      R[nk] = dq(age * 21); A[nk] = dq(exp(-age / 2.4) * 0.95); nk++;
+      R[nk] = dq(age * 21); A[nk] = qm(qexpn(dq(age / 2.4)), QC(0.95)); nk++;
     }
     for (int i = 0; i < NLED; i++) {
       q12 b = QC(0.035) + qm(QC(0.12), qexpn((LDS(i) * 410) >> 12));          /* exp(-DS / 10) */
@@ -226,13 +226,13 @@ void show_frame(show_t *s, uint16_t *out) {
     for (int j = 0; j < 7; j++) {
       typeof(s->u.ff[0]) *f = &s->u.ff[j];
       f->h += (noise2d(t * 0.7, f->ph * 10) - 0.5) * dt * 6;
-      f->x += cos(f->h) * f->sp * dt; f->y += sin(f->h) * f->sp * dt;
+      f->x += jcos(f->h) * f->sp * dt; f->y += jsin(f->h) * f->sp * dt;
       double half = half_width_at(f->y) - 2;
       if (f->y < LED_Y0 + 3 || f->y > LED_Y1 - 1 || fabs(f->x) > half) {
         double want = atan2((LED_Y0 + LED_Y1) / 2 + 6 - f->y, -f->x);
         f->h += ang_diff(want, f->h) * dt * 3;
       }
-      double e = sin(t * f->w + f->ph);
+      double e = jsin(t * f->w + f->ph);
       double blink = 0.25 + 0.75 * (e > 0 ? e * e : 0);
       splat(out, dq(f->x), dq(f->y), dq(blink), QC(PITCH * 1.35));
     }
@@ -267,7 +267,7 @@ void show_frame(show_t *s, uint16_t *out) {
   }
 
   case 8: { /* Fill & drain */
-    double tc = fmod(t, 11);
+    double tc = jfmod(t, 11);
     double L = tc < 4 ? smooth_d(0, 4, tc) : tc < 5.5 ? 1 : tc < 9.5 ? 1 - smooth_d(5.5, 9.5, tc) : 0;
     q12 base = dq(1.04 - L * 1.1);
     uint32_t w1 = dturn(t * 2.6), w2 = dturn(t * 4.1);
@@ -285,7 +285,7 @@ void show_frame(show_t *s, uint16_t *out) {
     uint32_t t27 = dturn(t * 0.27);
     int32_t x07 = dq16(t * 0.07), y09 = dq16(t * 0.09 + 3.1), x05 = dq16(t * 0.05), y13 = dq16(t * 0.13), y45 = dq16(t * 0.45);
     for (int i = 0; i < NLED; i++) {
-      int32_t w = ((LU(i) * 256) / 10) + ((qsin((uint32_t)led_v[i] * 467275u + t27) * 22938) >> 12);          /* U*1.6 + 0.35 sin(..), Q16 */
+      int32_t w = ((LU(i) * 256) / 10) + ((qsin((uint32_t)led_v[i] * 467275u + t27) * 22938) >> 12);          /* U*1.6 + 0.35 jsin(..), Q16 */
       q12 r1 = ONE - qabs(2 * noise2(w + x07, y09) - ONE);
       q12 r2 = ONE - qabs(2 * noise2(((w * 6963) >> 12) - x05 + (40 << 16), y13) - ONE);
       q12 rays = QC(0.35) + qm(QC(0.65), noise2(LU(i) * 104, ((led_v[i] * 224) / 10) - y45));
@@ -379,8 +379,8 @@ void show_frame(show_t *s, uint16_t *out) {
   }
 
   case 12: { /* Soft radar */
-    double w = 2 * M_PI / 8, beam = 0.95 * sin(w * t);
-    int dir = cos(w * t) >= 0 ? 1 : -1;
+    double w = 2 * M_PI / 8, beam = 0.95 * jsin(w * t);
+    int dir = jcos(w * t) >= 0 ? 1 : -1;
     uint32_t B = dturn(beam);
     for (int i = 0; i < NLED; i++) {
       int32_t dturns = -(int32_t)(B - ra_phi[i]);                                 /* -angDiff(beam, phi) */
@@ -399,7 +399,7 @@ void show_frame(show_t *s, uint16_t *out) {
 
   case 13: { /* Heartbeat */
     const double per = 1.25;
-    int32_t tm = (int32_t)(fmod(t, per) * 32768.0 + 0.5), perq = 40960;          /* Q15 */
+    int32_t tm = (int32_t)(jfmod(t, per) * 32768.0 + 0.5), perq = 40960;          /* Q15 */
     for (int i = 0; i < NLED; i++) {
       int32_t tau15 = tm - hb_d55[i];
       if (tau15 < 0) tau15 += perq;

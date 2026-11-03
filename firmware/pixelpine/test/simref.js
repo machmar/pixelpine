@@ -73,6 +73,13 @@ if (mode === "show") {
     for (const k of EMO) { buf.writeDoubleLE(S.brain.E[k], o); o += 8; }
   }
   fs.writeFileSync(out, buf);
+} else if (mode === "math") {              // node simref.js math <in.bin> <out.bin>: sin, cos, % like host math
+  const inp = fs.readFileSync(args[0]), n = inp.length / 16, o = Buffer.alloc(n * 24);
+  for (let k = 0; k < n; k++) {
+    const x = inp.readDoubleLE(k * 16), y = inp.readDoubleLE(k * 16 + 8);
+    o.writeDoubleLE(Math.sin(x), k * 24); o.writeDoubleLE(Math.cos(x), k * 24 + 8); o.writeDoubleLE(Math.abs(x) % y, k * 24 + 16);
+  }
+  fs.writeFileSync(args[1], o);
 } else {
   console.error("usage: see the top of test/simref.js");
   process.exit(1);

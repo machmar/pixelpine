@@ -77,6 +77,16 @@ int main(int argc, char **argv) {
     fclose(f);
     return 0;
   }
+  if (argc >= 4 && !strcmp(argv[1], "math")) {        /* in: pairs (x, y) of doubles; out: sin x, cos x, x % y */
+    FILE *f = fopen(argv[2], "rb"), *o = fopen(argv[3], "wb");
+    double xy[2];
+    while (fread(xy, 8, 2, f) == 2) {
+      double r[3] = { jsin(xy[0]), jcos(xy[0]), jfmod(xy[0] < 0 ? -xy[0] : xy[0], xy[1]) };
+      fwrite(r, 8, 3, o);
+    }
+    fclose(f); fclose(o);
+    return 0;
+  }
   fprintf(stderr, "usage: see the comment at the top of host/host_main.c\n");
   return 1;
 }

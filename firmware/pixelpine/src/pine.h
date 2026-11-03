@@ -65,7 +65,7 @@ typedef struct {
   int8_t lx, ly;
   uint8_t was_poked, nl;                        /* nl = entries in the list below */
   union {
-    struct { float x, y, t; } sp[24];           /* sparkles */
+    struct { int8_t x, y; float t; } sp[24];    /* sparkles (grid cell: the JS rounds a fixed position) */
     struct { double x, y, t; } z[4];            /* sleep z's */
     struct { double x, y, t, ph; } nt_[4];      /* music notes */
     double puff[8];                             /* grumpy puffs (age) */
@@ -134,4 +134,7 @@ void brain_scene_dropped(scene_t *sc);           /* the engine reuses a slot the
 /* ---------- one frame (pine.c) ---------- */
 void pine_init(double bond);
 void pine_frame(double touch_raw, uint8_t *q);   /* q[i] = 8-bit BCM level of LED i (gamma 2.2) */
+void pine_begin(double touch_raw);               /* the same frame in three steps, without a level buffer: */
+uint8_t pine_level(int i);                       /*   level of LED i (call for each LED once) */
+void pine_end(void);
 extern uint16_t pine_mix[NLED];                  /* Q12 perceived brightness of the last frame (tests) */

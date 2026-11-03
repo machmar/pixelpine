@@ -124,7 +124,7 @@ static void glancer(face_t *st, double dt, int *lx, int *ly) {
 static void sparkles(face_t *st, double dt, double rate, double x0, double x1, double y0, double y1, pose_t *p) {
   if (RND(st) < dt * rate && st->nl < 24) {
     double x = x0 + RND(st) * (x1 - x0), y = y0 + RND(st) * (y1 - y0);
-    st->l.sp[st->nl].x = (float)x; st->l.sp[st->nl].y = (float)y; st->l.sp[st->nl].t = 0; st->nl++;
+    st->l.sp[st->nl].x = (int8_t)jround(x); st->l.sp[st->nl].y = (int8_t)jround(y); st->l.sp[st->nl].t = 0; st->nl++;
   }
   uint8_t n = 0;
   for (uint8_t k = 0; k < st->nl; k++) {

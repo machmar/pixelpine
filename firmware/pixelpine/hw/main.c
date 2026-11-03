@@ -38,11 +38,11 @@ static void clock_init(void) {
   RCC->APBENR2 |= (1u << 11) | (1u << 20);           /* TIM1, ADC */
 }
 
-static uint8_t q[NLED];
 
 #ifdef SHOWCYCLE
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;
+static uint8_t demo_level(int i) { return gamma8(show_px(&demo.sh, demo.out, i)); }
 int main(void) {
   clock_init();
   scan_init();
@@ -55,8 +55,7 @@ int main(void) {
     uint32_t c0 = SYSTICK->CVR;
     if (++t == 8 * FPS) { t = 0; k = (uint8_t)((k + 1) % NSHOWS); show_init(&demo.sh, k, 1); }
     show_frame(&demo.sh, demo.out);
-    for (int i = 0; i < NLED; i++) q[i] = gamma8(show_px(&demo.sh, demo.out, i));
-    scan_show(q);
+    scan_show(demo_level);
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
     if (frame_cycles > frame_cycles_max) frame_cycles_max = frame_cycles;
   }
@@ -71,8 +70,9 @@ int main(void) {
     while (!tick) __asm__ volatile("wfi");
     tick = 0;
     uint32_t c0 = SYSTICK->CVR;
-    pine_frame(0, q);
-    scan_show(q);
+    pine_begin(0);
+    scan_show(pine_level);
+    pine_end();
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
     if (frame_cycles > frame_cycles_max) frame_cycles_max = frame_cycles;
   }
