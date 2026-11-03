@@ -99,13 +99,13 @@ and has moods (full design in [animations.md](animations.md)). You interact with
 
 | Gesture | How it's detected | Typical reaction |
 |---|---|---|
-| Hover (finger ≤ ~2 cm) | small capacitance rise, ≥ 0.3 s | Pine looks at you and smiles, peeks out of a show |
+| Hover (finger ≤ ~2 cm) | small capacitance rise, ≥ 0.3 s | Pine looks at you and smiles, peeks out of a show. *Rev A: below the noise, see below* |
 | Tap | light touch < 0.45 s | next show · "Oh right, my job!" · a sleeping Pine stirs |
 | Pet | light touch held > 0.6 s | content face, mood up, annoyance melts |
 | Press | firm touch (flattened fingertip, bigger area) | insists: wakes him, next show, "HEY!" if grumpy |
 | Squeeze | pinch front + back of the star (both faces are one electrode) | hug: blush and sparkles, or a squirm if grumpy |
 | Tickle | 3 taps within 1.4 s | giggle fit; too much makes him annoyed |
-| Room lights off | LEDs used as light sensors between frames | he gets sleepy and naps in the dark |
+| Room lights off | *not on rev A*: the LEDs can't be used as light sensors in a full charlieplex (see the [firmware README](../firmware/pixelpine/README.md#room-light)) | would make him sleepy in the dark |
 | Power-up | — | "Good morning" yawn; remembers your **bond** (stored in flash) |
 
 **Touch sensing.** The star is a single electrode on both copper layers, joined by a plated hole, wired through R19
@@ -113,6 +113,12 @@ and has moods (full design in [animations.md](animations.md)). You interact with
 capacitor, which resolves fractions of a pF. That is enough to separate hover, touch, firm press and a two-sided
 pinch. A slow baseline tracker removes drift (humidity, temperature). Sampling happens between scan phases, so
 the LED matrix doesn't disturb it. No extra parts; the moved pin is the only hardware change.
+
+Measured on the first board (2026-11-03): a resting finger drops the reading to ~44 % of untouched, a firm press to
+~27 %, a pinch to ~20 %, so tap, pet, press, squeeze and tickle separate cleanly. A touching finger brings mains hum
+(the USB supply floats relative to the user), so the firmware takes ~39 samples spread over each 20 ms frame and
+averages them. Hover (a finger 1 cm away) is below the noise. Details in the
+[firmware README](../firmware/pixelpine/README.md#touch-calibration).
 
 ## Connectivity
 

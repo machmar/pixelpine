@@ -33,10 +33,9 @@ with ConnectHelper.session_with_chosen_probe(target_override="py32f003x8",
             g = GESTURES[t.read8(syms["touch_event_last"][0])]
             print(f"{time.time() - t0:7.1f}s  >>> gesture: {g}", flush=True)
             if log:
-                log.write(f"{time.time() - t0:7.1f}s  >>> gesture: {g}
-"); log.flush()
+                log.write(f"{time.time() - t0:7.1f}s  >>> gesture: {g}\n"); log.flush()
         raw, base = r16("touch_raw_last"), r32("touch_base_last")
-        st = t.read8(syms["brain"][0] + 48 if False else syms["brain"][0] + 6 * 8)
+        st = t.read8(syms["brain"][0] + 6 * 8)                      # brain_t: 6 doubles, then state
         lvl = t.read32(syms["touch_level_last"][0]) / 4096
         line = (f"{time.time() - t0:7.1f}s  touch raw {raw:5d} [{r16('touch_min')}..{r16('touch_max')}] base {base:5d} drop {base - raw:5d} (~{lvl:4.2f})  "
                 f"state {STATES[st] if st < len(STATES) else st:<9} late {r32('frames_late')}  "

@@ -10,7 +10,7 @@ STACK_RESERVE = 1024;
 
 SECTIONS
 {
-  .isr_vector : { KEEP(*(.isr_vector)) } > FLASH
+  .isr_vector : { KEEP(*(.isr_vector)) KEEP(*(.fw_version)) } > FLASH   /* version string at 0x080000C0 */
   .text   : { . = ALIGN(4); *(.text .text.*) *(.rodata .rodata.*) . = ALIGN(4); } > FLASH
   .ARM.exidx : { *(.ARM.exidx*) } > FLASH
   .data   : { _data_start = .; *(.ramfunc .ramfunc.*) *(.data .data.*) . = ALIGN(4); _data_end = .; } > RAM AT > FLASH

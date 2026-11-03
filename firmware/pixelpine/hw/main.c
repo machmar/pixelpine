@@ -28,6 +28,9 @@ __attribute__((section(".isr_vector"), used)) static const vec_t vectors[16 + 32
   [15] = SysTick_Handler, [16 + TIM1_IRQn] = TIM1_BRK_UP_TRG_COM_IRQHandler,
 };
 
+/* firmware version, at a fixed address right after the vector table (technical file item 14: readable over SWD) */
+__attribute__((section(".fw_version"), used)) const char fw_version[32] = "PixelPine PP-240-WW fw 1.0.0";
+
 static volatile uint8_t tick, pending;
 volatile uint32_t frame_no, frame_cycles, frame_cycles_max, frames_late;   /* read with the debugger */
 void SysTick_Handler(void) { tick = 1; if (pending < 10) pending++; }
@@ -119,6 +122,9 @@ int main(void) {
 static uint16_t bond_saved;
 static uint32_t bond_frames;
 volatile uint8_t debug_save_now;                     /* set from the debugger to test the flash store */
+#ifdef WDT_TEST
+volatile uint8_t debug_hang;                         /* set from the debugger: the watchdog must reset Pine */
+#endif
 static void bond_tick(void) {
   uint16_t b = (uint16_t)(brain.E.bond * 65535.0 + 0.5);
   if (debug_save_now) { debug_save_now = 0; store_save_bond(b); bond_saved = b; bond_frames = 0; return; }
@@ -141,6 +147,13 @@ int main(void) {
   bond_saved = store_load_bond();
   SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
   pine_init(bond_saved / 65535.0);
+#if !defined(KEEP_SWD) || defined(WDT_TEST)      /* independent watchdog, ~1 s on the 32 kHz LSI (not in debug builds) */
+  RCC_CSR |= 1u;                                     /* LSI on: the watchdog's clock */
+  for (uint32_t n = 0; !(RCC_CSR & 2u) && n < 100000u; n++) {}
+  IWDG_KR = 0xCCCCu; IWDG_KR = 0x5555u; IWDG_PR = 4u; IWDG_RLR = 500u;
+  for (uint32_t n = 0; (IWDG_SR & 3u) && n < 100000u; n++) {}
+  IWDG_KR = 0xAAAAu;
+#endif
   /* One 50 fps tick = one simulator frame, always. If a frame ran late (two heavy shows in a transition), the
    * next one updates the logic only and skips building the LED levels, so animation speed never drifts; the LEDs
    * then keep the previous levels for one more frame. */
@@ -153,6 +166,12 @@ int main(void) {
     else frames_late++;
     pine_end();
     bond_tick();
+#ifdef WDT_TEST
+    while (debug_hang) {}
+#endif
+#if !defined(KEEP_SWD) || defined(WDT_TEST)
+    IWDG_KR = 0xAAAAu;
+#endif
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
     if (frame_cycles > frame_cycles_max) frame_cycles_max = frame_cycles;
   }

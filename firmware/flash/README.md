@@ -1,7 +1,8 @@
 # Flashing a PixelPine board
 
 Tested 2026-11-03 on the first assembled rev A board with a SEGGER J-Link EDU (HW V11): connect, chip erase,
-program, read-back verify and run all work. Only a 1 KB test image has been flashed so far, not product firmware.
+program, read-back verify and run all work. The product firmware is built and flashed with
+`python firmware/pixelpine/build.py flash` ([`../pixelpine/`](../pixelpine/README.md)), which calls this script.
 
 ## Wiring
 

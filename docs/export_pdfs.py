@@ -33,7 +33,8 @@ DOCS = [
     ("docs/eu-compliance/technical-file.md", "08-technical-file"),
     ("docs/eu-compliance/declaration-of-conformity.md", "09-declaration-of-conformity"),
     ("docs/eu-compliance/labelling-and-instructions.md", "10-labelling-and-instructions"),
-    ("firmware/sizetest/README.md", "11-firmware-sizing-prototype"),
+    ("firmware/pixelpine/README.md", "11-product-firmware"),
+    ("firmware/sizetest/README.md", "11b-firmware-sizing-prototype"),
     ("docs/superpowers/specs/2026-09-23-pixelpine-design.md", "12-design-spec"),
     ("docs/superpowers/plans/2026-09-23-pixelpine.md", "13-implementation-plan"),
     ("hardware/production/README.md", "14-ordering-at-jlcpcb"),
@@ -298,7 +299,7 @@ def file_url(p):
 def find_browser():
     for b in BROWSERS:
         cand = b
-        if shutil.which("cygpath"):
+        if not os.path.exists(cand) and shutil.which("cygpath"):
             cand = subprocess.run(["cygpath", "-u", b], capture_output=True, text=True).stdout.strip()
         if os.path.exists(cand):
             return cand

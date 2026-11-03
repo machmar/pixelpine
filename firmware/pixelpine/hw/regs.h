@@ -46,5 +46,10 @@ typedef struct { volatile uint32_t CSR, RVR, CVR, CALIB; } systick_t;
 #define IDLE_F 0xFFFFFCF0u                             /* lines PF0, PF1, PF4 */
 
 #define SYSCFG_CFGR1 REG32(0x40010000u)
+#define RCC_CSR  REG32(0x40021060u)                    /* LSION bit 0, LSIRDY bit 1 */
+#define IWDG_KR  REG32(0x40003000u)
+#define IWDG_PR  REG32(0x40003004u)
+#define IWDG_RLR REG32(0x40003008u)
+#define IWDG_SR  REG32(0x4000300Cu)
 #define DBGMCU_IDCODE REG32(0x40015800u)
 #define SCB_AIRCR REG32(0xE000ED0Cu)

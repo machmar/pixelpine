@@ -1,5 +1,8 @@
 # Firmware sizing prototype
 
+> The product firmware is in [`../pixelpine/`](../pixelpine/README.md). This folder is the earlier sizing prototype
+> that chose the MCU; it is kept as that record and isn't built for the board.
+
 **Purpose:** answer "does everything fit in the MCU?" with a real compile instead of an estimate.
 
 **This is not the product firmware** and it has **not been run on hardware**. The register-level code (scan ISR,

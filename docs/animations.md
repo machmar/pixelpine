@@ -65,9 +65,15 @@ to `touchTick()` in the simulator) turns the continuous signal into gestures:
 The same thresholds are drawn on the simulator's sensor bar. The gesture buttons play recorded signals through
 the classifier; on the canvas, click = tap, hold = pet, shift+hold = press, ctrl+hold = squeeze.
 
-**Ambient light** (for "room lights off, Pine gets sleepy") needs no sensor. Between frames the firmware
-reverse-biases one LED, lets it float, and times the discharge; photocurrent speeds it up. That's the classic
-LED-as-photodiode trick, and it's free with charlieplexed LEDs.
+**Ambient light** (for "room lights off, Pine gets sleepy") was planned as the LED-as-photodiode trick. Bring-up on
+the first board (2026-11-03) showed it **can't work in a full charlieplex**: every pair of lines carries two LEDs,
+one each way, so reverse-biasing one forward-biases its twin, and unbiased their photocurrents cancel. Rev A keeps
+the simulator's default "lights on"; rev B can free one LED pair by leaving one LED unpopulated
+([firmware README](../firmware/pixelpine/README.md#room-light)).
+
+**On the real board** (same date) the star senses tap, pet, press, squeeze and tickle; hover (a finger ~1 cm
+away) is below the noise. Calibration and the measured readings are in the
+[firmware README](../firmware/pixelpine/README.md#touch-calibration).
 
 ## Face behaviours (Pine's faces)
 
@@ -116,6 +122,11 @@ Pine's **favourite** (random per power-up); he opens with it when he's excited t
 Pine never uses the same random transition twice in a row.
 
 ## Firmware budget: measured by a test compile
+
+*The product firmware now exists and runs on the board: [`firmware/pixelpine/`](../firmware/pixelpine/README.md)
+(59 KB flash, 6.9 KB RAM, per-show CPU time measured on the MCU). It is a closer port than the sizing prototype
+below (double-precision brain, bit-exact `Math.sin`, the simulator's random streams), which is why it is larger
+than this estimate. The prototype's numbers are kept as the record of the MCU choice.*
 
 A bare-metal C port of everything that has to run on the tree lives in
 [`firmware/sizetest/`](../firmware/sizetest/README.md): the scan ISR, 15 shows, 18 face behaviours, transitions,
