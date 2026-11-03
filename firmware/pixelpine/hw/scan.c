@@ -8,6 +8,7 @@
 #define NOP8 "nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n"   /* gcc sizes inline asm by its lines */
 #define SLOT 48                                     /* 2 us at 24 MHz */
 static uint16_t masks[16][8];                       /* [anode][bit] = cathode lines pulled low */
+static uint16_t cur[8];                             /* the phase on show, latched at its start: no tearing */
 static uint8_t ph = 15, bit = 7;
 volatile uint32_t scan_frames;                      /* full refreshes, for the debugger */
 
@@ -35,7 +36,7 @@ static const uint16_t spread8[256] = { R64(0), R64(64), R64(128), R64(192) };
 void TIM1_BRK_UP_TRG_COM_IRQHandler(void) {
   TIM1->SR = 0;
   if (++bit < 8) {
-    uint32_t m = (masks[ph][bit] | 1u << ph) & LINE_MASK;
+    uint32_t m = (cur[bit] | 1u << ph) & LINE_MASK;
     GPIOA->MODER = MODA(m); GPIOB->MODER = MODB(m); GPIOF->MODER = MODF(m);
     TIM1->ARR = (SLOT << bit) - 1;
     return;
@@ -43,9 +44,17 @@ void TIM1_BRK_UP_TRG_COM_IRQHandler(void) {
   /* next anode: everything floats, move the anode, then bit 0 for one slot and bit 1 */
   bit = 1;
   if (++ph == 16) { ph = 0; scan_frames++; }
+  /* latch the whole phase: if the main loop rewrites these masks mid-phase, an LED going 127 -> 128 would
+   * otherwise show old bits 0-6 plus new bit 7 = 255 for a refresh (a bright flash) */
   const uint16_t *mk = masks[ph];
-  uint32_t m0 = (mk[0] | 1u << ph) & LINE_MASK, m1 = (mk[1] | 1u << ph) & LINE_MASK;
+  for (int b = 0; b < 8; b++) cur[b] = mk[b];
+  uint32_t m0 = (cur[0] | 1u << ph) & LINE_MASK, m1 = (cur[1] | 1u << ph) & LINE_MASK;
   uint32_t a0 = MODA(m0), b0 = MODB(m0), f0 = MODF(m0), a1 = MODA(m1), b1 = MODB(m1), f1 = MODF(m1);
+  /* every line low for a moment: drains the charge the last anode left on the floating lines, which would
+   * otherwise flow out through other LEDs at the start of this phase (ghosting) */
+  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
+  GPIOA->MODER = MODA(LINE_MASK); GPIOB->MODER = MODB(LINE_MASK); GPIOF->MODER = MODF(LINE_MASK);
+  __asm__ volatile(NOP8 NOP8);
   GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
   sense_touch_isr();                                /* the touch star, while every line floats (~5 us) */
   uint8_t an = line_pp[ph];
