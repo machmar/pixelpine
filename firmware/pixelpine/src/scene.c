@@ -7,6 +7,14 @@
  *    same arithmetic, 1.4 KB less RAM. */
 #include <math.h>
 #include "pine.h"
+#ifdef BENCH
+#include "../hw/regs.h"
+volatile uint32_t bench_eng[4];
+#define BT(k, c0) do { uint32_t c_ = (c0 - SYSTICK->CVR) & 0xFFFFFFu; if (c_ > bench_eng[k]) bench_eng[k] = c_; } while (0)
+#else
+#define BT(k, c0) (void)(c0)
+#define SYSTICK_CVR 0
+#endif
 
 static scene_t slot[2];
 static struct {
@@ -102,7 +110,13 @@ static void step_scene(scene_t *sc, double dt) {
     else { sc->acc += dt * sc->speed; while (sc->acc >= FW_DT) { sc->acc -= FW_DT; show_frame(&sc->sh, sc->out); } }
     sc->level_q = dq(sc->level);
     if (sc->has_ov) {
+#ifdef BENCH
+      uint32_t c1 = SYSTICK->CVR;
+#endif
       uint8_t fin = face_step(&sc->st, sc->ov_beh, dt, &c, sc->fbuf);
+#ifdef BENCH
+      BT(3, c1);
+#endif
       double d = face_dur[sc->ov_beh] >= 0 ? face_dur[sc->ov_beh] : 2, t = sc->st.t;
       double env = fmin(1, fmin(t / 0.35, fmax(0, d - t) / 0.35));
       sc->env_q = dq(env);
@@ -111,7 +125,7 @@ static void step_scene(scene_t *sc, double dt) {
   } else if (face_step(&sc->st, sc->beh, dt, &c, sc->fbuf)) sc->done = 1;
 }
 
-static q12 scene_px(const scene_t *sc, int i) {
+__attribute__((optimize("O2"))) static q12 scene_px(const scene_t *sc, int i) {
   if (sc->kind == K_FACE) return sc->fbuf[i];
   q12 v = qm(show_px(&sc->sh, sc->out, i), sc->level_q);
   if (sc->has_ov) v = qmax(qm(v, ONE - qm(QC(0.55), sc->env_q)), qm(sc->fbuf[i], sc->env_q));
@@ -126,10 +140,23 @@ static double smooth_d(double e0, double e1, double x) {
 static uint64_t thr(double x) { return x <= 0 ? 0 : (uint64_t)ceil(x * 4294967296.0); }   /* hash < x  <=>  u < thr */
 
 void engine_tick(double dt) {
+#ifdef BENCH
+  uint32_t c0 = SYSTICK->CVR;
+#else
+  uint32_t c0 = 0;
+#endif
   eng.et += dt;
   step_scene(eng.cur, dt);
+  BT(0, c0);
   if (!eng.to) return;
+#ifdef BENCH
+  c0 = SYSTICK->CVR;
+#endif
   step_scene(eng.to, dt);
+  BT(1, c0);
+#ifdef BENCH
+  c0 = SYSTICK->CVR;
+#endif
   eng.t += dt;
   double f = eng.t / eng.dur;
   if (f > 1) f = 1;
@@ -147,15 +174,21 @@ void engine_tick(double dt) {
     else { eng.a1 = 1; eng.a2 = dq(smooth_d(0.5, 1, f) * 1.1 - 0.05); eng.a3 = dq(1 - smooth_d(0.85, 1, f)); }
     break;
   case T_JELLY: {
-    double amp = 2.4 * dsin(M_PI * f);
-    for (int g = 0; g < GH; g++) eng.sh[g] = (int8_t)floor(dsin((g + GYMIN) * 0.9 + eng.et * 14) * amp + 0.5);
+    double amp = 2.4 * fsin(M_PI * f), b = eng.et * 14;       /* sin(GY 0.9 + t 14) = sin a cos b + cos a sin b */
+    int64_t sb = (int64_t)(fsin(b) * 1073741824.0), cb = (int64_t)(fcos(b) * 1073741824.0);
+    int64_t aq = (int64_t)(amp * 65536.0);
+    for (int g = 0; g < GH; g++) {
+      int64_t sn = (jelly_s[g] * cb + jelly_c[g] * sb) >> 30;            /* Q30 */
+      eng.sh[g] = (int8_t)((((sn >> 14) * aq) + (1LL << 31)) >> 32);    /* Math.round(sin * amp) */
+    }
     break;
   }
   }
   if (f >= 1) eng.finish = 1;
+  BT(2, c0);
 }
 
-q12 engine_px(int i) {
+__attribute__((optimize("O2"))) q12 engine_px(int i) {
   if (!eng.to) return scene_px(eng.cur, i);
   const scene_t *A = eng.cur, *B = eng.to;
   switch (eng.type) {

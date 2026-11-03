@@ -51,7 +51,7 @@ const double face_dur[F_COUNT] = {
   [F_HUG] = 2.2, [F_SQUIRM] = 1.5, [F_TICKLED] = 3, [F_PEEK] = 2.2, [F_YAWN] = 1.8,
 };
 
-typedef struct { uint8_t g; float x, y, v; } extra_t;   /* positions only get rounded to a grid cell */
+typedef struct { uint8_t g, cell; float x, y, v; } extra_t;   /* positions only get rounded to a grid cell */
 typedef struct {
   uint8_t eyeL, eyeR, mouth;
   int lx, ly, dx, dy;
@@ -66,8 +66,12 @@ static void pose_reset(pose_t *p) {
   p->lvl = 1; p->mouth_lvl = 1; p->blush = 0; p->body = 0; p->nex = 0;
 }
 static void eye(pose_t *p, uint8_t e) { p->eyeL = p->eyeR = e; }
+/* an extra already on a grid cell with its brightness in Q12 (x, y exact integers, v = Q12 / 4096) */
+static void exq(pose_t *p, uint8_t g, int x, int y, q12 v) {
+  if (p->nex < 30) { extra_t *e = &p->ex[p->nex++]; e->g = g; e->cell = 1; e->x = (float)x; e->y = (float)y; e->v = (float)v; }
+}
 static void ex(pose_t *p, uint8_t g, double x, double y, double v) {
-  if (p->nex < 30) { extra_t *e = &p->ex[p->nex++]; e->g = g; e->x = (float)x; e->y = (float)y; e->v = (float)v; }
+  if (p->nex < 30) { extra_t *e = &p->ex[p->nex++]; e->g = g; e->cell = 0; e->x = (float)x; e->y = (float)y; e->v = (float)v; }
 }
 static int jround(double x) { return (int)floor(x + 0.5); }          /* Math.round */
 #define RND(st) xs_d(&(st)->rng)
@@ -96,8 +100,10 @@ static void render_pose(const pose_t *p) {
   for (int j = 0; j < p->nex; j++) {
     const extra_t *e = &p->ex[j];
     if (e->v <= 0) continue;
-    q12 v = dq((e->v < 1 ? e->v : 1) * L);
-    int bx = jround(e->x), by = jround(e->y);   /* float -> double: exact */
+    q12 v;
+    int bx, by;
+    if (e->cell) { v = Lq == ONE ? (q12)e->v : qm((q12)e->v, Lq); bx = (int)e->x; by = (int)e->y; }
+    else { v = dq((e->v < 1 ? e->v : 1) * L); bx = jround(e->x); by = jround(e->y); }   /* float -> double: exact */
     for (int k = 0; k < GLYPH[e->g].n; k++) pset(bx + GLYPH[e->g].p[k][0], by + GLYPH[e->g].p[k][1], v);
   }
 }
@@ -122,19 +128,17 @@ static void glancer(face_t *st, double dt, int *lx, int *ly) {
   *lx = st->lx; *ly = st->ly;
 }
 static void sparkles(face_t *st, double dt, double rate, double x0, double x1, double y0, double y1, pose_t *p) {
-  if (RND(st) < dt * rate && st->nl < 24) {
+  if (xs_next(&st->rng) < (uint32_t)(dt * rate * 4294967296.0) && st->nl < 24) {    /* st.rnd() < dt * rate */
     double x = x0 + RND(st) * (x1 - x0), y = y0 + RND(st) * (y1 - y0);
-    st->l.sp[st->nl].x = (int8_t)jround(x); st->l.sp[st->nl].y = (int8_t)jround(y); st->l.sp[st->nl].t = 0; st->nl++;
+    st->l.sp[st->nl].x = (int8_t)jround(x); st->l.sp[st->nl].y = (int8_t)jround(y); st->l.sp[st->nl].n = 0; st->nl++;
   }
   uint8_t n = 0;
-  for (uint8_t k = 0; k < st->nl; k++) {
-    st->l.sp[k].t = (float)(st->l.sp[k].t + dt);
-    if (st->l.sp[k].t < 0.45) st->l.sp[n++] = st->l.sp[k];
-  }
+  for (uint8_t k = 0; k < st->nl; k++)                              /* (s.t += dt) < 0.45 */
+    if (++st->l.sp[k].n <= sizeof spark_tab / sizeof spark_tab[0]) st->l.sp[n++] = st->l.sp[k];
   st->nl = n;
   for (uint8_t k = 0; k < n; k++) {
-    double t = st->l.sp[k].t;
-    ex(p, t > 0.12 && t < 0.3 ? G_PLUS : G_DOT, st->l.sp[k].x, st->l.sp[k].y, 1 - t / 0.45);
+    uint16_t e = spark_tab[st->l.sp[k].n - 1];
+    exq(p, e >> 15 ? G_PLUS : G_DOT, st->l.sp[k].x, st->l.sp[k].y, e & 0x7FFF);
   }
 }
 
@@ -159,8 +163,8 @@ static void update(face_t *st, uint8_t beh, double dt, const face_ctx_t *c, pose
     if (st->bd > 0) st->bd -= dt;
     eye(p, blink ? E_CLOSED : c->look ? E_WIDE : E_OPEN); p->lx = lx; p->ly = ly;
     p->mouth = c->mood > 0.75 ? M_CAT : c->mood < 0.3 ? M_FLAT : M_SMILE;
-    p->blush = 0.2 + (st->bd > 0 ? 0.6 * dsin(M_PI * st->bd / 2) : 0) + (c->look ? 0.3 : 0);
-    p->body = 0.05 + 0.02 * dsin(t * 1.3);
+    p->blush = 0.2 + (st->bd > 0 ? 0.6 * fsin(M_PI * st->bd / 2) : 0) + (c->look ? 0.3 : 0);
+    p->body = 0.05 + 0.02 * fsin(t * 1.3);
     break;
   }
   case F_GIGGLE: {
@@ -177,8 +181,8 @@ static void update(face_t *st, uint8_t beh, double dt, const face_ctx_t *c, pose
     uint8_t n = 0;
     for (uint8_t k = 0; k < st->nl; k++) { st->l.z[k].t += dt; if (st->l.z[k].t < 3.2) st->l.z[n++] = st->l.z[k]; }
     st->nl = n;
-    double breath = 0.5 + 0.5 * dsin(t * 2 * M_PI / 4.8);
-    uint8_t dream = dsin(t * 0.23) > 0.8;
+    double breath = 0.5 + 0.5 * fsin(t * 2 * M_PI / 4.8);
+    uint8_t dream = fsin(t * 0.23) > 0.8;
     eye(p, E_SLEEP); p->mouth = dream ? M_CAT : M_SMALL; p->mouth_lvl = 0.6; p->lvl = 0.7 + 0.25 * breath;
     p->blush = 0.15; p->body = 0.02 + 0.05 * breath;
     for (uint8_t k = 0; k < n; k++) {
@@ -189,12 +193,12 @@ static void update(face_t *st, uint8_t beh, double dt, const face_ctx_t *c, pose
   }
   case F_STIR:
     if (t < 0.7) { p->eyeL = E_LID; p->eyeR = E_SLEEP; p->mouth = M_POUT; p->body = 0.03; }
-    else if (t < 1.5) { eye(p, E_CLOSED); p->mouth = M_WAVY; p->dx = dsin(t * 20) > 0 ? 1 : 0; p->body = 0.03; }
+    else if (t < 1.5) { eye(p, E_CLOSED); p->mouth = M_WAVY; p->dx = fsin(t * 20) > 0 ? 1 : 0; p->body = 0.03; }
     else { eye(p, E_SLEEP); p->mouth = M_SMALL; p->mouth_lvl = 0.6; p->dx = 1; p->body = 0.03; p->lvl = 0.8; }
     break;
   case F_WINK:
     if (t > 0.8 && t < 1.7) {
-      double k = dsin(M_PI * (t - 0.8) / 0.9);
+      double k = fsin(M_PI * (t - 0.8) / 0.9);
       static const int8_t pts[5][2] = { {0, 1}, {-1, 2}, {1, 2}, {0, 2}, {0, 3} };
       for (int j = 0; j < 5; j++) ex(p, G_DOT, pts[j][0], pts[j][1], k);
     }
@@ -212,21 +216,21 @@ static void update(face_t *st, uint8_t beh, double dt, const face_ctx_t *c, pose
     for (uint8_t k = 0; k < st->nl; k++) { st->l.nt_[k].t += dt; if (st->l.nt_[k].t < 2.6) st->l.nt_[n++] = st->l.nt_[k]; }
     st->nl = n;
     int beat = (int)floor(t * 3.2) % 4;
-    eye(p, E_HAPPY); p->mouth = beat % 2 == 0 ? M_O : M_SMALL; p->dx = jround(dsin(t * 1.6)); p->blush = 0.3; p->body = 0.06;
+    eye(p, E_HAPPY); p->mouth = beat % 2 == 0 ? M_O : M_SMALL; p->dx = jround(fsin(t * 1.6)); p->blush = 0.3; p->body = 0.06;
     for (uint8_t k = 0; k < n; k++) {
       double nt = st->l.nt_[k].t;
-      ex(p, G_NOTE, st->l.nt_[k].x + dsin(nt * 3 + st->l.nt_[k].ph) * 0.8, st->l.nt_[k].y - nt * 1.8, nt < 2 ? 0.8 : 0.8 * (2.6 - nt) / 0.6);
+      ex(p, G_NOTE, st->l.nt_[k].x + fsin(nt * 3 + st->l.nt_[k].ph) * 0.8, st->l.nt_[k].y - nt * 1.8, nt < 2 ? 0.8 : 0.8 * (2.6 - nt) / 0.6);
     }
     break;
   }
   case F_SNEEZE:
-    if (t < 3.1) ex(p, G_DOT, jround(dsin(t * 2.2) * 1.2), 1 + t * (15 / 3.1), 1);
+    if (t < 3.1) ex(p, G_DOT, jround(fsin(t * 2.2) * 1.2), 1 + t * (15 / 3.1), 1);
     else if (t < 4.3) ex(p, G_DOT, 0, 16, 1);
     if (t >= 4.3 && t < 5.3) {
       double k = (t - 4.3) / 1.0;
       for (int a = 0; a < 12; a++) {
         double g = a / 12.0 * 2 * M_PI;
-        ex(p, G_DOT, dcos(g) * (1 + k * 9), 16 + dsin(g) * (1 + k * 6), 1 - k);
+        ex(p, G_DOT, fcos(g) * (1 + k * 9), 16 + fsin(g) * (1 + k * 6), 1 - k);
       }
     }
     if (t < 3.0) { eye(p, E_OPEN); p->ly = t < 2.3 ? -1 : 0; p->mouth = M_O; p->body = 0.05; }
@@ -272,18 +276,18 @@ static void update(face_t *st, uint8_t beh, double dt, const face_ctx_t *c, pose
     else { eye(p, E_HAPPY); p->mouth = M_GRIN; p->body = 0.06; p->blush = 0.3; ex(p, G_PLUS, 0, 12 - (t - 4.4) / 1.8 * 10, 1); }
     break;
   case F_PET:
-    eye(p, E_HAPPY); p->mouth = M_CAT; p->blush = 0.65 + 0.3 * dsin(t * 3); p->body = 0.07 + 0.02 * dsin(t * 2);
+    eye(p, E_HAPPY); p->mouth = M_CAT; p->blush = 0.65 + 0.3 * fsin(t * 3); p->body = 0.07 + 0.02 * fsin(t * 2);
     break;
   case F_HUG:
     eye(p, E_SQUINT); p->mouth = M_GRIN; p->blush = 1; p->dy = (int)floor(t * 8) % 2 ? -1 : 0; p->body = 0.1;
     sparkles(st, dt, 12, -9, 9, 9, 20, p);
     break;
   case F_SQUIRM:
-    eye(p, E_SQUINT); p->mouth = M_WAVY; p->dx = jround(dsin(t * 25)); p->body = 0.04;
+    eye(p, E_SQUINT); p->mouth = M_WAVY; p->dx = jround(fsin(t * 25)); p->body = 0.04;
     break;
   case F_TICKLED:
     eye(p, t - floor(t / 0.8) * 0.8 < 0.6 ? E_HAPPY : E_SQUINT); p->mouth = M_GRIN; p->dy = (int)floor(t * 12) % 2 ? -1 : 0;
-    p->dx = jround(dsin(t * 7)); p->blush = 0.7; p->body = 0.08;
+    p->dx = jround(fsin(t * 7)); p->blush = 0.7; p->body = 0.08;
     sparkles(st, dt, 9, -9, 9, 9, 20, p);
     break;
   case F_PEEK: {

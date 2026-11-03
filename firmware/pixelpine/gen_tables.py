@@ -104,7 +104,7 @@ def melt_frames(v):
         s = f32(max(0.0, s - c)); k += 1
     return k
 T["uint16_t snow_k"] = [melt_frames(V[i]) for i in range(N)]
-T["float row_y"] = [f32(LY[0] - GY[0] * P + g * P) for g in range(GYMIN, GYMAX + 1)]   # LY of each grid row
+T["int32_t row_y16"] = [q16(f32(LY[0] - GY[0] * P + g * P)) for g in range(GYMIN, GYMAX + 1)]   # LY of each grid row, Q16
 
 # --- shared maths tables ---
 T["uint16_t sin_tab"] = [int(round(math.sin(k / 1024 * 2 * math.pi) * 65535)) for k in range(257)]   # quarter wave, Q16
@@ -115,6 +115,27 @@ T["uint16_t pow14_tab"] = [q12(math.pow(k / 256, 1.4)) for k in range(257)]
 # gamma 2.2 + 8-bit quantisation exactly as the simulator's "raw scan" model: Q = round(255 * x^2.2)
 # gamma_thr[q] = smallest Q12 value whose level is >= q + 1, so level(v) = number of thresholds <= v
 gam = [int(math.floor(255 * math.pow(v / 4096, 2.2) + 0.5)) for v in range(4097)]
+# coarse start for gamma8(): level of v = 8k, refined with gamma_thr
+T["uint8_t gamma_lo"] = [gam[min(4096, 8 * k)] for k in range(513)]
+# splat falloff (1 - d/r)^2 as a function of x = (d/r)^2, x = k/256
+T["uint16_t splat_tab"] = [q12((1 - math.sqrt(k / 256)) ** 2) for k in range(257)]
+# twinkle: the simulator's s.ph[i] += dt in a Float32Array, as float bit patterns, frame 1..140
+ph, bits = 0.0, []
+for n in range(140):
+    ph = f32(ph + 0.02); bits.append(struct.unpack("<I", struct.pack("<f", ph))[0])
+T["uint32_t tw_ph"] = bits
+T["int32_t jelly_s"] = [int(round(math.sin(g * 0.9) * 2 ** 30)) for g in range(GYMIN, GYMAX + 1)]   # sin(GY * 0.9), Q30
+T["int32_t jelly_c"] = [int(round(math.cos(g * 0.9) * 2 ** 30)) for g in range(GYMIN, GYMAX + 1)]
+T["uint16_t smooth_tab"] = [q12((k / 256) ** 2 * (3 - 2 * k / 256)) for k in range(257)]   # smoothstep, value noise
+T["int32_t sin30_tab"] = [int(round(math.sin(k / 256 * math.pi / 2) * 2 ** 30)) for k in range(257)]   # quarter wave, Q30
+# face sparkles: the JS keeps t += dt (double) per sparkle; per frame n: alive (t < 0.45), "+" glyph, brightness
+sp_t, sp_tab = 0.0, []
+for n in range(1, 24):
+    sp_t += 0.02
+    if sp_t >= 0.45:
+        break
+    sp_tab.append((1 << 15 if 0.12 < sp_t < 0.3 else 0) | q12(1 - sp_t / 0.45))
+T["uint16_t spark_tab"] = sp_tab                         # bit 15 = plus glyph, low bits = v (Q12)
 T["uint16_t gamma_thr"] = [next(v for v in range(4097) if gam[v] >= q) for q in range(1, 256)] + [4097]
 
 # --- charlieplex scan: the LEDs of each anode line and their cathode lines (hardware/led_assignment.json) ---

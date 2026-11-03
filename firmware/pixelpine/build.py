@@ -37,16 +37,17 @@ def run(cmd):
     return r.stdout
 
 
-def arm(showcycle=False):
+def arm(showcycle=False, bench=False):
     gcc = tool("arm-none-eabi-gcc", ["C:/Program Files (x86)/Arm GNU Toolchain arm-none-eabi/*/bin/arm-none-eabi-gcc.exe"])
     bindir = os.path.dirname(gcc)
     os.makedirs(os.path.join(HERE, "build"), exist_ok=True)
-    name = "showcycle" if showcycle else "pixelpine"
+    name = "showcycle" if showcycle else "bench" if bench else "pixelpine"
     srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
     srcs += [] if showcycle else sorted({p.replace("\\", "/") for p in glob.glob("hw/*.c", root_dir=HERE)} - {"hw/main.c", "hw/scan.c"})
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",
-         "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []), *srcs,
+         "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []),
+         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *srcs,
          "-nostartfiles", "-Thw/link.ld", "--specs=nano.specs", "-Wl,--gc-sections",
          f"-Wl,-Map=build/{name}.map", "-lm", "-o", elf])
     run([os.path.join(bindir, "arm-none-eabi-objcopy"), "-O", "ihex", elf, f"build/{name}.hex"])
@@ -77,4 +78,4 @@ if __name__ == "__main__":
         subprocess.run([sys.executable, os.path.join(HERE, "..", "flash", "flash.py"), os.path.join(HERE, hexfile)],
                        check=True)
     else:
-        arm(showcycle=args[:1] == ["showcycle"])
+        arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"])

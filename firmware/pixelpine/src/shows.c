@@ -4,6 +4,7 @@
  * Shows whose JS keeps a separate `s.buf` and outputs max(floor, buf) keep buf in `out` and apply the floor in
  * show_px() (saves 480 B of RAM per show). */
 #include <math.h>
+#include <string.h>
 #include "pine.h"
 
 #define RND(s) xs_d(&(s)->rng)
@@ -11,25 +12,43 @@ static inline uint32_t fturn_d(double f) { return (uint32_t)(int64_t)(f * 429496
 static inline q12 lerp16(q12 v) { return v > ONE ? ONE : v; }
 
 /* ---------- splat: soft "light blob" onto the LED grid (positions mm Q12, radius <= 9 mm) ---------- */
-static void blob(uint16_t *buf, int32_t x, int32_t y, q12 amp, q12 r, uint8_t add) {
-  int32_t g0 = (((x - r) >> 4) * INV_PITCH_Q16 >> 24) - 1, g1 = (((x + r) >> 4) * INV_PITCH_Q16 >> 24) + 1;
-  int32_t h0 = (((y - r - LED_Y0_Q) >> 4) * INV_PITCH_Q16 >> 24) + GYMIN - 1;
-  int32_t h1 = (((y + r - LED_Y0_Q) >> 4) * INV_PITCH_Q16 >> 24) + GYMIN + 1;
+__attribute__((optimize("O2"))) static void blob(uint16_t *buf, int32_t x, int32_t y, q12 amp, q12 r, uint8_t add) {
+  /* only the grid cells whose LED can be closer than r: LX = gx * P, LY = YBASE + gy * P */
+  int32_t g0 = ((x - r) >> 4) * INV_PITCH_Q16 >> 24, g1 = (((x + r) >> 4) * INV_PITCH_Q16 >> 24) + 1;
+  int32_t h0 = ((y - r - LED_YBASE_Q) >> 4) * INV_PITCH_Q16 >> 24, h1 = (((y + r - LED_YBASE_Q) >> 4) * INV_PITCH_Q16 >> 24) + 1;
+  if (g0 < GXMIN) g0 = GXMIN;
+  if (g1 > GXMAX) g1 = GXMAX;
+  if (h0 < GYMIN) h0 = GYMIN;
+  if (h1 > GYMAX) h1 = GYMAX;
   uint32_t rr = (uint32_t)(r >> 1) * (uint32_t)(r >> 1);
-  for (int32_t gx = g0; gx <= g1; gx++)
-    for (int32_t gy = h0; gy <= h1; gy++) {
-      int i = led_at(gx, gy);
-      if (i < 0) continue;
-      int32_t dx = LXQ(i) - x, dy = LYQ(i) - y;
-      if (dx >= r || dx <= -r || dy >= r || dy <= -r) continue;
+  uint32_t sh = 0;
+  while ((rr >> sh) >= 65536u) sh++;
+  uint32_t inv = (1u << 30) / (rr >> sh);               /* (d2 >> sh) * inv >> 16 = d2 / rr in Q14 */
+  for (int32_t gy = h0; gy <= h1; gy++) {
+    int32_t dy = LED_YBASE_Q + ((gy * PITCH_Q4) >> 2) - y;
+    if (dy >= r || dy <= -r) continue;
+    const uint8_t *row = grid + (gy - GYMIN) * GW - GXMIN;
+    for (int32_t gx = g0; gx <= g1; gx++) {
+      int i = row[gx];
+      if (i == 255) continue;
+      int32_t dx = ((gx * PITCH_Q4) >> 2) - x;
+      if (dx >= r || dx <= -r) continue;
       uint32_t d2 = (uint32_t)((dx >> 1) * (dx >> 1)) + (uint32_t)((dy >> 1) * (dy >> 1));
       if (d2 >= rr) continue;
-      q12 d = (q12)(isqrt32(d2) << 1);
-      q12 f = ONE - (q12)(((int32_t)d << 12) / r);
-      q12 v = qm(amp, qm(f, f));
+      uint32_t x14 = ((d2 >> sh) * inv) >> 16;          /* (d/r)^2, Q14 */
+      q12 ff;
+      if (x14 < 64) {                                    /* centre: (1 - sqrt x)^2 is too steep for the table */
+        q12 f = ONE - (q12)(((int32_t)(isqrt32(d2) << 1) << 12) / r);
+        ff = qm(f, f);
+      } else {
+        uint32_t k = x14 >> 6, fr = x14 & 63u;
+        ff = splat_tab[k] - (q12)((((int32_t)splat_tab[k] - splat_tab[k + 1]) * (int32_t)fr) >> 6);
+      }
+      q12 v = qm(amp, ff);
       if (add) { q12 s = buf[i] + v; buf[i] = (uint16_t)(s > ONE ? ONE : s); }
       else if (v > buf[i]) buf[i] = (uint16_t)v;
     }
+  }
 }
 void splat(uint16_t *buf, int32_t x, int32_t y, q12 amp, q12 r) { blob(buf, x, y, amp, r, 0); }
 void add_splat(uint16_t *buf, int32_t x, int32_t y, q12 amp, q12 r) { blob(buf, x, y, amp, r, 1); }
@@ -38,22 +57,17 @@ static void decay_buf(uint16_t *buf, double k) {
   uint32_t m = (uint32_t)(k * 65536.0 + 0.5);
   for (int i = 0; i < NLED; i++) buf[i] = (uint16_t)((buf[i] * m + 32768u) >> 16);
 }
-static double half_width_at(double y) {
-  int g = (int)floor((y - LED_Y0) / PITCH + 0.5) + GYMIN;
-  if (g < GYMIN) g = GYMIN;
-  if (g > GYMAX) g = GYMAX;
-  return row_half[g - GYMIN] / 4096.0;
-}
-static double ang_diff(double a, double b) {
-  double d = a - b;
-  while (d > M_PI) d -= 2 * M_PI;
-  while (d < -M_PI) d += 2 * M_PI;
-  return d;
-}
 static double smooth_d(double e0, double e1, double x) {
   double t = (x - e0) / (e1 - e0);
   t = t < 0 ? 0 : t > 1 ? 1 : t;
   return t * t * (3 - 2 * t);
+}
+/* first frame n with n * dt > x (the JS adds dt to p.age every frame and compares) */
+static int age_frames(double x) {
+  int n = (int)(x / FW_DT);
+  while (n > 0 && (n - 1) * FW_DT > x) n--;
+  while (n * FW_DT <= x) n++;
+  return n;
 }
 static inline q12 pow_n(q12 x, int n) { q12 r = ONE; while (n--) r = qm(r, x); return r; }
 
@@ -64,8 +78,10 @@ void show_init(show_t *s, uint8_t k, uint32_t seed) {
   case 0: for (int i = 0; i < NLED; i++) s->u.tw[i] = 255; break;            /* ph = -1: idle */
   case 6:
     for (int j = 0; j < 7; j++) {
-      s->u.ff[j].x = (RND(s) * 2 - 1) * 8; s->u.ff[j].y = LED_Y0 + 12 + RND(s) * 28; s->u.ff[j].h = RND(s) * 6.28;
-      s->u.ff[j].sp = 5 + RND(s) * 3; s->u.ff[j].ph = RND(s) * 6.28; s->u.ff[j].w = 1.5 + RND(s) * 1.5;
+      double x = (RND(s) * 2 - 1) * 8, y = LED_Y0 + 12 + RND(s) * 28, h = RND(s) * 6.28;
+      double sp = 5 + RND(s) * 3, ph = RND(s) * 6.28, w = 1.5 + RND(s) * 1.5;
+      s->u.ff[j].x = dq16(x); s->u.ff[j].y = dq16(y); s->u.ff[j].h = dturn(h); s->u.ff[j].sp = dq16(sp * FW_DT);
+      s->u.ff[j].ny = dq16(ph * 10); s->u.ff[j].ph = dturn(ph); s->u.ff[j].w = dturn(w * FW_DT);
     }
     break;
   case 10: s->u.fw.next = 0.3; break;
@@ -96,10 +112,12 @@ void show_frame(show_t *s, uint16_t *out) {
       uint32_t w = s->u.tw[i], n = w & 255u;
       if (n == 255) {
         if (xs_next(&s->rng) < 38654706u) {                          /* s.rnd() < dt * 0.45 */
-          float dur = (float)(0.9 + RND(s) * 1.8), ph = 0;
+          float dur = (float)(0.9 + RND(s) * 1.8);
           double pk = 0.45 + RND(s) * 0.55;
-          uint32_t nend = 0;
-          do { ph = (float)(ph + dt); nend++; } while (ph < dur);     /* first frame with ph / dur >= 1 */
+          uint32_t db, lo = 0, hi = 140;
+          memcpy(&db, &dur, 4);
+          while (lo < hi) { uint32_t m = (lo + hi) >> 1; if (tw_ph[m] < db) lo = m + 1; else hi = m; }
+          uint32_t nend = lo + 1;                                       /* first frame with ph / dur >= 1 */
           s->u.tw[i] = (uint32_t)(dt / dur * 65536.0 + 0.5) << 8 | (uint32_t)(dq(pk) - 1843) << 19;
           s->u.twe[i] = (uint8_t)nend;
         }
@@ -125,26 +143,28 @@ void show_frame(show_t *s, uint16_t *out) {
       S->spawn -= 1;
       if (S->nfl < 26) {
         flake_t *f = &S->fl[S->nfl++];
-        f->x = (RND(s) * 2 - 1) * 21; f->y = LED_Y0 - 3 - RND(s) * 5; f->vy = 4 + RND(s) * 3.5;
-        f->ph = RND(s) * 6.28; f->sw = 0.6 + RND(s) * 1.2;
+        double x = (RND(s) * 2 - 1) * 21, y = LED_Y0 - 3 - RND(s) * 5, vy = 4 + RND(s) * 3.5;
+        double ph = RND(s) * 6.28, sw = 0.6 + RND(s) * 1.2;
+        f->x = dq16(x); f->y = dq16(y); f->vy = dq16(vy * dt); f->ph = dturn(ph); f->sw = dq(sw);
       }
     }
-    for (int k = S->nfl - 1; k >= 0; k--) {
+    uint32_t t14 = dturn(t * 1.4);
+    for (int k = S->nfl - 1; k >= 0; k--) {                  /* fixed point: double here cost ~5 ms a frame */
       flake_t *f = &S->fl[k];
-      f->y += f->vy * dt;
-      double x = f->x + f->sw * jsin(t * 1.4 + f->ph);
-      int gx = (int)floor(x / PITCH + 0.5);
+      f->y += f->vy;
+      int32_t x = f->x + ((f->sw * qsin(t14 + f->ph)) >> 8);              /* Q16 */
+      int gx = (int)((((x >> 8) * INV_PITCH_Q16) + (1 << 23)) >> 24);   /* Math.round(x / P) */
       int8_t bottom = (gx >= GXMIN && gx <= GXMAX) ? col_bottom[gx - GXMIN] : -1;
       uint8_t gone = 0;
       if (bottom >= 0 && !S->melt) {
         int li = led_at(gx, bottom - S->depth[gx - GXMIN]);
-        if (li >= 0 && f->y >= row_y[led_gy[li] - GYMIN]) {
+        if (li >= 0 && f->y >= row_y16[led_gy[li] - GYMIN]) {
           S->lit[li >> 3] |= (uint8_t)(1u << (li & 7)); S->depth[gx - GXMIN]++; S->total++; gone = 1;
         }
       }
-      if (!gone && f->y > LED_Y1 + 3) gone = 1;
+      if (!gone && f->y > dq16(LED_Y1 + 3)) gone = 1;
       if (gone) { for (int j = k; j < S->nfl - 1; j++) S->fl[j] = S->fl[j + 1]; S->nfl--; continue; }
-      splat(out, dq(x), dq(f->y), QC(0.95), QC(PITCH * 1.25));
+      splat(out, x >> 4, f->y >> 4, QC(0.95), QC(PITCH * 1.25));
     }
     if (S->total > 70) S->melt = 1;
     if (S->melt) {                              /* every lit LED melts from 1; snow_k = frames to reach 0 */
@@ -191,13 +211,16 @@ void show_frame(show_t *s, uint16_t *out) {
   }
 
   case 4: { /* Candle flicker */
-    double gust = 0.72 + 0.28 * smooth_d(0.22, 0.6, noise2d(t * 0.35, 7.3));
+    double gust = 0.72 + 0.28 * smooth_d(0.22, 0.6, fxd(noise2(dq16(t * 0.35), dq16(7.3))));
     double y = t * 2.4;
-    int32_t y0 = dq16(y), y1 = dq16(y * 2.1 + 5), y2 = dq16(y * 4.3 + 11), tr = dq16(t * 0.6);
+    noise_row_t r0, r1, r2, rg[GH];
+    noise_row(&r0, dq16(y)); noise_row(&r1, dq16(y * 2.1 + 5)); noise_row(&r2, dq16(y * 4.3 + 11));
+    for (int g = 0; g < GH; g++) noise_row(&rg[g], (int32_t)(((LED_YBASE_Q + (((g + GYMIN) * PITCH_Q4) >> 2)) * 5898LL) >> 12));
+    int32_t tr = dq16(t * 0.6);
     q12 gq = dq(gust);
     for (int i = 0; i < NLED; i++) {
-      q12 n1 = qm(QC(0.55), noise2((i * 383255) >> 3, y0)) + qm(QC(0.3), noise2(((i * 804834) >> 3) + (17 << 16), y1)) + qm(QC(0.15), noise2(((i * 1647995) >> 3) + (3 << 16), y2));
-      q12 region = QC(0.85) + qm(QC(0.3), noise2(((LXQ(i) * 5898) >> 12) + tr, (LYQ(i) * 5898) >> 12) - QC(0.5));
+      q12 n1 = qm(QC(0.55), noise2r(&r0, (i * 383255) >> 3)) + qm(QC(0.3), noise2r(&r1, ((i * 804834) >> 3) + (17 << 16))) + qm(QC(0.15), noise2r(&r2, ((i * 1647995) >> 3) + (3 << 16)));
+      q12 region = QC(0.85) + qm(QC(0.3), noise2r(&rg[led_gy[i] - GYMIN], ((LXQ(i) * 5898) >> 12) + tr) - QC(0.5));
       out[i] = (uint16_t)qclamp(qm(qm(QC(0.22) + qm(QC(0.62), n1), gq), region));
     }
     break;
@@ -222,26 +245,30 @@ void show_frame(show_t *s, uint16_t *out) {
   }
 
   case 6: { /* Fireflies (buf = out) */
-    decay_buf(out, exp(-dt * 2.2));
-    for (int j = 0; j < 7; j++) {
+    decay_buf(out, 0.9569539574730467);                       /* exp(-dt * 2.2) */
+    int32_t nx = dq16(t * 0.7);
+    for (int j = 0; j < 7; j++) {                         /* fixed point: same steering, ~50x cheaper than double */
       typeof(s->u.ff[0]) *f = &s->u.ff[j];
-      f->h += (noise2d(t * 0.7, f->ph * 10) - 0.5) * dt * 6;
-      f->x += jcos(f->h) * f->sp * dt; f->y += jsin(f->h) * f->sp * dt;
-      double half = half_width_at(f->y) - 2;
-      if (f->y < LED_Y0 + 3 || f->y > LED_Y1 - 1 || fabs(f->x) > half) {
-        double want = atan2((LED_Y0 + LED_Y1) / 2 + 6 - f->y, -f->x);
-        f->h += ang_diff(want, f->h) * dt * 3;
+      f->h += (uint32_t)((noise2(nx, f->ny) - 2048) * 20026);          /* (noise - 0.5) * dt * 6 rad, in turns */
+      f->x += (qcos(f->h) * f->sp) >> 12; f->y += (qsin(f->h) * f->sp) >> 12;
+      int32_t gq = (f->y - dq16(LED_Y0)) + dq16(PITCH / 2);           /* halfWidthAt: Math.round((y - Y0) / P) */
+      int g = (gq >= 0 ? gq / dq16(PITCH) : -((-gq + dq16(PITCH) - 1) / dq16(PITCH))) + GYMIN;
+      g = g < GYMIN ? GYMIN : g > GYMAX ? GYMAX : g;
+      int32_t half = (row_half[g - GYMIN] << 4) - (2 << 16);
+      if (f->y < dq16(LED_Y0 + 3) || f->y > dq16(LED_Y1 - 1) || (f->x < 0 ? -f->x : f->x) > half) {
+        uint32_t want = qatan2(dq16((LED_Y0 + LED_Y1) / 2 + 6) - f->y, -f->x);
+        f->h += (uint32_t)(((int32_t)(want - f->h) >> 10) * 61);                       /* angDiff * dt * 3 */
       }
-      double e = jsin(t * f->w + f->ph);
-      double blink = 0.25 + 0.75 * (e > 0 ? e * e : 0);
-      splat(out, dq(f->x), dq(f->y), dq(blink), QC(PITCH * 1.35));
+      q12 e = qsin(s->n * f->w + f->ph);
+      q12 blink = QC(0.25) + qm(QC(0.75), e > 0 ? qm(e, e) : 0);
+      splat(out, f->x >> 4, f->y >> 4, blink, QC(PITCH * 1.35));
     }
     break;
   }
 
   case 7: { /* Rising sparks (buf = out); y Q16 mm, vy Q16 mm per frame */
     typeof(s->u.sp) *S = &s->u.sp;
-    decay_buf(out, exp(-dt * 7));
+    decay_buf(out, 0.8693582353988059);                       /* exp(-dt * 7) */
     S->spawn += dt * 11;
     while (S->spawn >= 1) {
       S->spawn -= 1;
@@ -283,12 +310,23 @@ void show_frame(show_t *s, uint16_t *out) {
 
   case 9: { /* Northern lights */
     uint32_t t27 = dturn(t * 0.27);
-    int32_t x07 = dq16(t * 0.07), y09 = dq16(t * 0.09 + 3.1), x05 = dq16(t * 0.05), y13 = dq16(t * 0.13), y45 = dq16(t * 0.45);
+    int32_t x07 = dq16(t * 0.07), x05 = dq16(t * 0.05), y45 = dq16(t * 0.45);
+    noise_row_t r09, r13, rr[GH];
+    noise_row(&r09, dq16(t * 0.09 + 3.1)); noise_row(&r13, dq16(t * 0.13));
+    for (int g = 0; g < GH; g++) {                     /* V of grid row g, as in LV */
+      int i0 = grid[g * GW + (0 - GXMIN)] != 255 ? grid[g * GW + (0 - GXMIN)] : 0;
+      noise_row(&rr[g], ((led_v[i0] * 224) / 10) - y45);
+    }
+    int32_t rs[GH];                                     /* 0.35 sin(V * 2.8 + t * 0.27) depends on the row only */
+    for (int g = 0; g < GH; g++) {
+      int i0 = grid[g * GW + (0 - GXMIN)] != 255 ? grid[g * GW + (0 - GXMIN)] : 0;
+      rs[g] = (qsin((uint32_t)led_v[i0] * 467275u + t27) * 22938) >> 12;
+    }
     for (int i = 0; i < NLED; i++) {
-      int32_t w = ((LU(i) * 256) / 10) + ((qsin((uint32_t)led_v[i] * 467275u + t27) * 22938) >> 12);          /* U*1.6 + 0.35 jsin(..), Q16 */
-      q12 r1 = ONE - qabs(2 * noise2(w + x07, y09) - ONE);
-      q12 r2 = ONE - qabs(2 * noise2(((w * 6963) >> 12) - x05 + (40 << 16), y13) - ONE);
-      q12 rays = QC(0.35) + qm(QC(0.65), noise2(LU(i) * 104, ((led_v[i] * 224) / 10) - y45));
+      int32_t w = ((LU(i) * 256) / 10) + rs[led_gy[i] - GYMIN];          /* U*1.6 + 0.35 sin(..), Q16 */
+      q12 r1 = ONE - qabs(2 * noise2r(&r09, w + x07) - ONE);
+      q12 r2 = ONE - qabs(2 * noise2r(&r13, ((w * 6963) >> 12) - x05 + (40 << 16)) - ONE);
+      q12 rays = QC(0.35) + qm(QC(0.65), noise2r(&rr[led_gy[i] - GYMIN], LU(i) * 104));
       q12 r22 = qm(r2, r2);
       out[i] = (uint16_t)qclamp(QC(0.025) + qm(qm(QC(0.95), qm(qm(r1, r1), r1)) + qm(QC(0.5), qm(r22, r22)), rays));
     }
@@ -297,7 +335,7 @@ void show_frame(show_t *s, uint16_t *out) {
 
   case 10: { /* Fireworks (buf = out); rocket / particle positions Q16 mm, velocities Q16 mm per frame */
     typeof(s->u.fw) *F = &s->u.fw;
-    decay_buf(out, exp(-dt * 9));
+    decay_buf(out, 0.835270211411272);                       /* exp(-dt * 9) */
     F->next -= dt;
     if (F->next <= 0) {
       F->next = 1.1 + RND(s) * 1.6;
@@ -313,11 +351,15 @@ void show_frame(show_t *s, uint16_t *out) {
       if (r->y <= r->ty) {
         int n = 18 + (int)(RND(s) * 8);
         for (int j = 0; j < n; j++) {
-          double a = 2 * M_PI * j / n + RND(s) * 0.2, sp = 11 + RND(s) * 6, life = 1.2 + RND(s) * 0.8;
+          uint32_t ra = xs_next(&s->rng), rs = xs_next(&s->rng), rl = xs_next(&s->rng);
+          uint32_t at = (uint32_t)(((uint64_t)j << 32) / (uint32_t)n) + (uint32_t)(((uint64_t)ra * 136713055u) >> 32);   /* + rnd * 0.2 rad */
+          int32_t spq = 14418 + (int32_t)(((uint64_t)rs * 7864u) >> 32);    /* (11 + rnd * 6) * dt, Q16 mm per frame */
           if (F->npt < 52) {
             fwpt_t *p = &F->pt[F->npt++];
+            double life = 1.2 + rl * (1.0 / 4294967296.0) * 0.8;
             p->x = r->x; p->y = r->y; p->age = 0; p->life = (uint16_t)dq(life);
-            p->vx = (int16_t)lround(dcos(a) * sp * dt * 65536.0); p->vy = (int16_t)lround(dsin(a) * sp * dt * 65536.0);
+            p->nend = (uint8_t)age_frames(life); p->n06 = (uint8_t)age_frames(0.6 * life);
+            p->vx = (int16_t)((qcos(at) * spq + 2048) >> 12); p->vy = (int16_t)((qsin(at) * spq + 2048) >> 12);
           }
         }
         if (F->nfl < 4) { F->fl[F->nfl].x = r->x >> 4; F->fl[F->nfl].y = r->y >> 4; F->fl[F->nfl].a = ONE; F->nfl++; }
@@ -325,19 +367,19 @@ void show_frame(show_t *s, uint16_t *out) {
         F->nrk--;
       }
     }
-    int32_t drag = (int32_t)(exp(-dt * 1.6) * 65536.0 + 0.5);
+    int32_t drag = (int32_t)(0.9685065820791976 * 65536.0 + 0.5);   /* exp(-dt * 1.6) */
     for (int k = F->npt - 1; k >= 0; k--) {
       fwpt_t *p = &F->pt[k];
       p->vx = (int16_t)((p->vx * drag + 32768) >> 16);
       p->vy = (int16_t)(((p->vy * drag + 32768) >> 16) + 236);                  /* + 9 mm/s^2 * dt */
       p->x += p->vx; p->y += p->vy; p->age++;
-      if ((int32_t)p->age * 8192 > (int32_t)p->life * 100) {                     /* age > life */
+      if (p->age >= p->nend) {                                                    /* age > life */
         for (int j = k; j < F->npt - 1; j++) F->pt[j] = F->pt[j + 1];
         F->npt--; continue;
       }
-      double u = p->age * dt / (p->life / 4096.0);
-      double tw = u > 0.6 ? (RND(s) < 0.5 ? 0.35 : 1) : 1;
-      splat(out, p->x >> 4, p->y >> 4, qm(qpow14(dq(1 - u)), dq(tw)), QC(PITCH * 1.0));
+      q12 u = (q12)(((int32_t)p->age * 335544) / p->life);                /* age / life, Q12 */
+      q12 tw = p->age >= p->n06 ? (xs_next(&s->rng) < 0x80000000u ? QC(0.35) : ONE) : ONE;   /* u > 0.6 */
+      splat(out, p->x >> 4, p->y >> 4, qm(qpow14(ONE - u), tw), QC(PITCH * 1.0));
     }
     for (int k = F->nfl - 1; k >= 0; k--) {
       add_splat(out, F->fl[k].x, F->fl[k].y, qm(F->fl[k].a, QC(0.35)), QC(9));

@@ -31,9 +31,9 @@ static inline int led_at(int gx, int gy) {
 }
 
 /* ---------- light shows (shows.c) ---------- */
-typedef struct { double x, y, vy, ph, sw; } flake_t;
+typedef struct { int32_t x, y, vy, sw; uint32_t ph; } flake_t;   /* mm Q16, fall per frame Q16, sway turns */
 typedef struct { int32_t x, y; int16_t vy; uint16_t ph, a, life; } spark_t;
-typedef struct { int32_t x, y; int16_t vx, vy; uint8_t age; uint16_t life; } fwpt_t;
+typedef struct { int32_t x, y; int16_t vx, vy; uint8_t age, n06, nend; uint16_t life; } fwpt_t;   /* n06 / nend: frames */
 typedef struct {
   uint8_t k;
   uint32_t rng;                             /* s.rnd */
@@ -42,7 +42,7 @@ typedef struct {
   union {
     struct { uint32_t tw[NLED]; uint8_t twe[NLED]; };   /* twinkle: frame | step << 8 | (peak - 0.45) << 19; end frame */
     struct { uint8_t lit[(NLED + 7) / 8]; int8_t depth[GW]; uint8_t nfl, melt; uint16_t total, mk; double spawn; flake_t fl[26]; } sn;
-    struct { double x, y, h, sp, ph, w; } ff[7];
+    struct { int32_t x, y, sp, ny; uint32_t h, w, ph; } ff[7];   /* fireflies: mm Q16, heading / blink in turns */
     struct { double spawn; uint8_t np; spark_t p[48]; } sp;
     struct { double next; uint8_t nrk, npt, nfl; struct { int32_t x, y, tx, ty; } rk[4]; fwpt_t pt[52];
              struct { int32_t x, y; q12 a; } fl[4]; } fw;
@@ -65,7 +65,7 @@ typedef struct {
   int8_t lx, ly;
   uint8_t was_poked, nl;                        /* nl = entries in the list below */
   union {
-    struct { int8_t x, y; float t; } sp[24];    /* sparkles (grid cell: the JS rounds a fixed position) */
+    struct { int8_t x, y; uint8_t n; } sp[24];  /* sparkles: grid cell (the JS rounds a fixed position), age in frames */
     struct { double x, y, t; } z[4];            /* sleep z's */
     struct { double x, y, t, ph; } nt_[4];      /* music notes */
     double puff[8];                             /* grumpy puffs (age) */

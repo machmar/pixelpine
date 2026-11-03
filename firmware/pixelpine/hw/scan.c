@@ -23,14 +23,21 @@ static const uint8_t line_pp[16] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0
 static const uint16_t spread8[256] = { R64(0), R64(64), R64(128), R64(192) };
 
 /* lines L0-L6 = PA0-PA6, L7-L9 = PA12-PA14, L10-L12 = PB5-PB7, L13/L14 = PF0/PF1, L15 = PF4 */
-#define MODA(m) (IDLE_A | spread8[(m) & 0x7Fu] | (uint32_t)spread8[((m) >> 7) & 7u] << 24)
+#ifdef KEEP_SWD                                     /* bench build: PA13/PA14 stay SWD, lines L8/L9 stay dark */
+#undef IDLE_A
+#define IDLE_A (0xC0FFC000u | 0x28000000u)
+#define LINE_MASK 0xFCFFu
+#else
+#define LINE_MASK 0xFFFFu
+#endif
+#define MODA(m) (IDLE_A | spread8[(m) & 0x7Fu] | (uint32_t)spread8[((m) >> 7) & 7u & (uint32_t)(LINE_MASK >> 7)] << 24)
 #define MODB(m) (IDLE_B | spread8[(((m) >> 10) & 7u) << 5])
 #define MODF(m) (IDLE_F | spread8[(((m) >> 13) & 3u) | (((m) >> 15) & 1u) << 4])
 
 void TIM1_BRK_UP_TRG_COM_IRQHandler(void) {
   TIM1->SR = 0;
   if (++bit < 8) {
-    uint32_t m = masks[ph][bit] | 1u << ph;
+    uint32_t m = (masks[ph][bit] | 1u << ph) & LINE_MASK;
     GPIOA->MODER = MODA(m); GPIOB->MODER = MODB(m); GPIOF->MODER = MODF(m);
     TIM1->ARR = (SLOT << bit) - 1;
     return;
@@ -39,7 +46,7 @@ void TIM1_BRK_UP_TRG_COM_IRQHandler(void) {
   bit = 1;
   if (++ph == 16) { ph = 0; scan_frames++; }
   const uint16_t *mk = masks[ph];
-  uint32_t m0 = mk[0] | 1u << ph, m1 = mk[1] | 1u << ph;
+  uint32_t m0 = (mk[0] | 1u << ph) & LINE_MASK, m1 = (mk[1] | 1u << ph) & LINE_MASK;
   uint32_t a0 = MODA(m0), b0 = MODB(m0), f0 = MODF(m0), a1 = MODA(m1), b1 = MODB(m1), f1 = MODF(m1);
   GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
   uint8_t an = line_pp[ph];
@@ -64,7 +71,7 @@ void scan_init(void) {
 
 /* 8-bit levels -> cathode masks, one anode at a time (built aside, copied in with the interrupt held off).
  * level(i) gives LED i's level; each LED is asked once. */
-void scan_show(uint8_t (*level)(int)) {
+__attribute__((optimize("O2"))) void scan_show(uint8_t (*level)(int)) {
   const uint8_t *pl = phase_led, *pc = phase_cath;
   for (int a = 0; a < 16; a++) {
     uint16_t m[8] = { 0 };

@@ -33,6 +33,7 @@ q12 qexpn(q12 x);                         /* exp(-x), x >= 0 */
 q12 qgauss(q12 d);                        /* exp(-d*d) */
 q12 qpow16(q12 x), qpow12(q12 x), qpow14(q12 x);   /* x^1.6, x^1.2, x^1.4 for 0 <= x <= 1 */
 uint32_t isqrt32(uint32_t v);
+uint32_t qatan2(int32_t y, int32_t x);   /* atan2 in turns, ~0.004 rad */
 uint8_t gamma8(q12 v);                    /* round(255 * v^2.2): the simulator's 8-bit "raw scan" level */
 double noise2d(double x, double y);       /* noise2 in double, for per-frame scalars (exact as the JS) */
 double jsin(double x), jcos(double x);    /* Math.sin / Math.cos, bit-exact (jsmath.c) */
@@ -45,6 +46,13 @@ uint32_t hash_u(uint32_t x);              /* hashU(x) * 2^32 */
 static inline uint32_t hash1u(uint32_t i) { return hash_u(i * 0x9e3779b1u); }
 static inline uint32_t hash2u(int32_t x, int32_t y) { return hash_u((uint32_t)x * 374761393u + (uint32_t)y * 668265263u); }
 q12 noise2(int32_t x16, int32_t y16);     /* value noise 0..1, coordinates in Q16 */
+/* noise2 along a line of constant y: the y half of the work (hash base, weight) done once per frame or row */
+typedef struct { uint32_t h0, h1; q12 v; int32_t xi; q12 a, b, c, d; } noise_row_t;   /* + corner cache */
+void noise_row(noise_row_t *r, int32_t y16);
+q12 noise2r(noise_row_t *r, int32_t x16);
+double sin_hp(uint32_t turn);             /* sin to ~1e-9, for positions that get rounded to the LED grid */
+static inline double fsin(double r) { return sin_hp(dturn(r)); }   /* Math.sin to ~1e-9, 7x faster than jsin */
+static inline double fcos(double r) { return sin_hp(dturn(r) + 0x40000000u); }
 
 /* xorshift32, as makeRng() in the simulator. rnd_u() is the raw state; s / 2^32 is the simulator's s.rnd() */
 static inline uint32_t xs_next(uint32_t *s) { uint32_t x = *s; x ^= x << 13; x ^= x >> 17; x ^= x << 5; return *s = x; }
