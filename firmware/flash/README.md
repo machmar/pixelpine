@@ -17,6 +17,21 @@ off and `flash.py` turns it off explicitly.
 | 9 SWCLK | TP5 | PA14 |
 | 15 RESET | TP6 | NRST |
 
+## Flipper Zero instead of the J-Link
+
+Flipper's **DAP Link** app (Apps > GPIO) makes it a CMSIS-DAP probe; `flash.py --cmsis` uses it. Tested 2026-11-03
+on two blank boards. The Flipper's pins are 3.3 V and the PY32 at 5 V doesn't read them reliably, so **power the board
+from the Flipper's 3V3 pin (pin 9) to TP1 during flashing, with the board's USB-C unplugged** (never both: USB's 5 V
+would back-feed the Flipper). Wire GND, SWDIO and SWCLK as the DAP Link app's pinout screen shows; NRST isn't needed
+for a blank board.
+
+```bash
+py -3 firmware/flash/flash.py --cmsis firmware/pixelpine/build/pixelpine.hex
+```
+
+Then remove the 3V3 wire and plug in USB-C to start Pine. A board that already runs Pine needs NRST (connect under
+reset) to be reflashed.
+
 ## Setup (once per PC)
 
 1. Install the SEGGER J-Link Software Pack (tested with V9.90): <https://www.segger.com/downloads/jlink/>
