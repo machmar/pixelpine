@@ -40,17 +40,17 @@ def run(cmd):
     return r.stdout
 
 
-def arm(showcycle=False, bench=False, calib=False, diag=False):
+def arm(showcycle=False, bench=False, calib=False, diag=False, extra=None):
     gcc = tool("arm-none-eabi-gcc", ["C:/Program Files (x86)/Arm GNU Toolchain arm-none-eabi/*/bin/arm-none-eabi-gcc.exe"])
     bindir = os.path.dirname(gcc)
     os.makedirs(os.path.join(HERE, "build"), exist_ok=True)
-    name = "showcycle" if showcycle else "bench" if bench else "calib" if calib else "diag" if diag else "pixelpine"
+    name = extra or ("showcycle" if showcycle else "bench" if bench else "calib" if calib else "diag" if diag else "pixelpine")
     srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
     srcs += [] if showcycle else sorted({p.replace("\\", "/") for p in glob.glob("hw/*.c", root_dir=HERE)} - {"hw/main.c", "hw/scan.c"})
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",
          "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []),
-         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *(["-DDIAG"] if diag else []), *srcs,
+         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *(["-DDIAG"] if diag else []), *([f"-D{extra.upper()}"] if extra else []), *srcs,
          "-nostartfiles", "-Thw/link.ld", "--specs=nano.specs", "-Wl,--gc-sections", "-Wl,--no-warn-rwx-segments",
          f"-Wl,-Map=build/{name}.map", "-lm", "-o", elf])
     run([os.path.join(bindir, "arm-none-eabi-objcopy"), "-O", "ihex", elf, f"build/{name}.hex"])

@@ -476,7 +476,7 @@ const ANIMS = [
     frame(s, t, dt, out) {
       const period = 2.1, kNow = Math.floor(t / period);
       for (let i = 0; i < N; i++) {
-        let b = 0.035 + 0.12 * Math.exp(-DS[i] / 10);
+        let b = 0.035;
         for (let k = kNow; k > kNow - 4; k--) {
           const age = t - k * period; if (age < 0) continue;
           const dd = (DS[i] - age * 21) / 3.2;
@@ -527,7 +527,11 @@ const ANIMS = [
         if (prog > p.life) { s.p.splice(k, 1); continue; }
         splat(s.buf, p.x + 0.9 * Math.sin(t * 5 + p.ph), p.y, p.a * Math.pow(1 - prog / p.life, 1.2), P * 1.1);
       }
-      for (let i = 0; i < N; i++) out[i] = Math.max(s.buf[i], 0.025 + 0.07 * V[i] * V[i]);
+      // a bed of embers in the bottom 3 rows: slowly drifting patches
+      for (let i = 0; i < N; i++) {
+        const bed = GY[i] > gyMax - 3 ? (0.025 + 0.07 * V[i] * V[i]) * (0.2 + 1.6 * noise2(LX[i] * 0.35 + t * 0.25, LY[i] * 0.35 - t * 0.15)) : 0;
+        out[i] = Math.max(s.buf[i], bed);
+      }
     },
   },
   {
@@ -723,7 +727,7 @@ const GLYPH = {
 function pset(buf, gx, gy, v) { const i = at(gx, gy); if (i >= 0 && v > buf[i]) buf[i] = v; }
 function renderPose(p, buf) {
   buf.fill(0);
-  if (p.body) for (let i = 0; i < N; i++) buf[i] = p.body * (0.65 + 0.35 * (1 - V[i]));
+  if (p.body > 0.15) for (let i = 0; i < N; i++) buf[i] = p.body * (0.65 + 0.35 * (1 - V[i]));   // only flashes (the sneeze), no constant glow
   const L = p.lvl ?? 1, ax = FACE_AX + (p.dx | 0), ay = FACE_AY + (p.dy | 0);
   const eye = (shape, side) => {
     const pts = EYE[shape]; if (!pts) return;

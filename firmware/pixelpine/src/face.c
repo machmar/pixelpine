@@ -81,7 +81,7 @@ static void pset(int gx, int gy, q12 v) { int i = led_at(gx, gy); if (i >= 0 && 
 
 static void render_pose(const pose_t *p) {
   q12 body = dq(p->body);
-  for (int i = 0; i < NLED; i++) tgt[i] = (uint16_t)(body ? qm(body, LBODY(i)) : 0);
+  for (int i = 0; i < NLED; i++) tgt[i] = (uint16_t)(p->body > 0.15 ? qm(body, LBODY(i)) : 0);   /* only flashes, no constant glow */
   double L = p->lvl;
   int ax = FACE_AX + p->dx, ay = FACE_AY + p->dy;
   q12 Lq = dq(L);

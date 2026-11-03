@@ -98,7 +98,14 @@ q12 show_px(const show_t *s, const uint16_t *out, int i) {
   q12 v = out[i];
   switch (s->k) {
   case 6: return qmax(QC(0.02), v);
-  case 7: return qmax(v, QC(0.025) + qm(QC(0.07), qm(led_v[i], led_v[i])));
+  case 7: {                                                        /* a bed of embers in the bottom 3 rows */
+    if (led_gy[i] <= GYMAX - 3) return v;
+    q12 f = QC(0.025) + qm(QC(0.07), qm(led_v[i], led_v[i]));
+    double t = s->t - FW_DT;                                       /* the frame's own t (show_frame advanced it) */
+    int32_t x = (int32_t)(((int64_t)LXQ(i) * dq16(0.35)) >> 12) + dq16(t * 0.25);
+    int32_t y = (int32_t)(((int64_t)LYQ(i) * dq16(0.35)) >> 12) - dq16(t * 0.15);
+    return qmax(v, qm(f, QC(0.2) + qm(QC(1.6), noise2(x, y))));
+  }
   case 10: return qmax(QC(0.015), v);
   default: return v;
   }
@@ -238,7 +245,7 @@ void show_frame(show_t *s, uint16_t *out) {
       R[nk] = dq(age * 21); A[nk] = qm(qexpn(dq(age / 2.4)), QC(0.95)); nk++;
     }
     for (int i = 0; i < NLED; i++) {
-      q12 b = QC(0.035) + qm(QC(0.12), qexpn((LDS(i) * 410) >> 12));          /* exp(-DS / 10) */
+      q12 b = QC(0.035);
       for (int k = 0; k < nk; k++) b += qm(qgauss(((LDS(i) - R[k]) * 1280) >> 12), A[k]);   /* / 3.2 */
       out[i] = (uint16_t)lerp16(b);
     }
