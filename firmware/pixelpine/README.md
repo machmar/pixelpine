@@ -46,6 +46,7 @@ python build.py flash
 | `python build.py host` | the PC test build, `build/pine_host.exe` |
 | `python build.py showcycle` | bring-up: every show for 8 s in turn, no brain |
 | `python build.py bench` | CPU-time bench; keeps SWD alive (lines L8/L9 dark), read with `test/readbench.py` |
+| `python build.py diag` | LED test patterns, 6 s each: all off / top LED full / top LED dim / all at 64 |
 | `python build.py calib` | product firmware with SWD alive, for `test/sensemon.py`, `calibrate.py`, `gestures.py`, `stackcheck.py` |
 
 The product firmware turns SWDIO/SWCLK into LED lines L8/L9, so the debugger can only reach it through
@@ -63,6 +64,22 @@ connect-under-reset (which `flash.py` does).
   119.6 Hz with interrupt overhead). This is the simulator's "Raw scan, 8 bit" model: each LED gets
   round(255 x brightness^2.2). TIM1 interrupts once per bit 2..7; bits 0 and 1 are shown from the phase-start
   interrupt with a counted delay. Masks are rebuilt every frame, one anode at a time with the interrupt held off.
+- **Scan pitfalls found on the board (2026-11-03):**
+  - **Pull resistors:** after reset PA13 (SWDIO) has a pull-up and PA14 (SWCLK) a pull-down. As lines L8/L9 they
+    kept ~30 LEDs glowing faintly even with every LED at 0. `scan_init()` turns the pulls off on all 16 lines.
+  - **Timer wrap:** if a bit-slot interrupt runs late, the new period can be shorter than the count already
+    reached and the 16-bit timer runs to 65 535 (2.7 ms): bright flashes, worst in the radar. Guarded in the ISR.
+  - **Latched phases:** each anode phase copies its 8 masks at its start, so a frame update mid-phase can't mix
+    old and new bits.
+  - **Empty slots:** a slot with no LED lit doesn't drive the anode (it would charge every floating line
+    through the anode's LEDs, a faint flash on each).
+  - **Current-sharing compensation** (the simulator's "Compensated" model) is in `scan.c` behind `-DSHARE_COMP`
+    but off: on the board, and in the simulator's own model, it made levels jitter frame to frame.
+  - **Never halt a running board:** a halted core freezes the scan with one slot's pins driven, so one LED
+    gets steady current (~8-9 mA, bright but within the LED's rating). Measure with connect-under-reset or the
+    `calib` / `bench` builds without halting, and use `python build.py diag` for test patterns.
+  - **Left over:** at 5 V a tiny current passes through two LEDs in series, so a lit LED can make one other
+    LED glow very softly. Rev B fix: run the board a little below 5 V (a series diode, ~4.3 V).
 - **Clock:** internal 24 MHz HSI (no PLL on the F003), 0 flash wait states. SysTick ticks the 50 fps frame.
 - **Watchdog:** independent watchdog on the LSI (which has to be switched on first on the PY32), ~1 s, refreshed
   every frame; product build only, so the debug builds can halt. Checked with a test build (`-DKEEP_SWD
