@@ -96,7 +96,9 @@ Order files are ready: [`hardware/production/README.md`](hardware/production/REA
 LCSC stock for the 240 LEDs per board and look at the LED polarity and U1 pin 1 in JLC's placement preview.
 
 1. **Firmware, once boards arrive**: the real firmware grows out of `firmware/sizetest/py32f003/`, then touch
-   thresholds and LED brightness get tuned on hardware.
+   thresholds and LED brightness get tuned on hardware. Boards have arrived (2026-11-03): the first one powers up
+   at 4.97 V with no short, and SWD flashing through a J-Link works
+   ([`firmware/flash/`](firmware/flash/README.md)).
 
 Done: PCB routed on 2 layers (LED arrangement optimised for it, DRC clean), manufacturer name, address (Jehličková 240, 240 24 Stromečkov: made up for the school project, replace it with the
 registered address for a real product) and e-mail on the product, U1 and J1 placement orientation checked, MCU choice final
