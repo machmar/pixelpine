@@ -55,11 +55,10 @@ def main():
 
     check_vtref()
     from pyocd.core.helpers import ConnectHelper
-    from pyocd.core.target import Target
     from pyocd.flash.eraser import FlashEraser
     from pyocd.flash.file_programmer import FileProgrammer
 
-    opts = {"connect_mode": "under-reset", "reset_type": "hw", "frequency": a.speed}
+    opts = {"connect_mode": "under-reset", "reset_type": "hw", "frequency": a.speed, "resume_on_disconnect": False}
     with ConnectHelper.session_with_chosen_probe(target_override=TARGET, options=opts) as s:
         t = s.target
         if a.erase:
@@ -80,8 +79,15 @@ def main():
             print(f"boot mode     {('main flash', 'system ROM', '?', 'SRAM')[t.read32(0x40010000) & 3]}")
             print(f"FLASH_OPTR    0x{t.read32(0x40022020):08X}")
             print("flash[0:16]  ", " ".join(f"{w:08X}" for w in t.read_memory_block32(FLASH, 4)))
-        t.reset(Target.ResetType.HARDWARE)      # NRST pin, boots from main flash
-        print("reset (NRST), running")
+        t.halt()
+    # The firmware turns SWDIO/SWCLK into LED lines, so the debug session has to be closed before it runs:
+    # pulse NRST from the probe instead of resetting through pyOCD.
+    import pylink, time
+    jl = pylink.JLink()
+    jl.open()
+    jl.set_reset_pin_low(); time.sleep(0.02); jl.set_reset_pin_high()
+    jl.close()
+    print("reset (NRST), running")
 
 
 if __name__ == "__main__":
