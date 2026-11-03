@@ -49,6 +49,8 @@ def main():
     ap.add_argument("--erase", action="store_true", help="chip erase (with an image: erase everything first)")
     ap.add_argument("--info", action="store_true")
     ap.add_argument("--speed", type=int, default=1_000_000, help="SWD clock in Hz")
+    ap.add_argument("--no-nrst", action="store_true",
+                    help="NRST not wired (blank board only): plain connect, no reset at the end; power-cycle to start")
     a = ap.parse_args()
     if not (a.image or a.erase or a.info):
         ap.error("nothing to do")
@@ -59,6 +61,8 @@ def main():
     from pyocd.flash.file_programmer import FileProgrammer
 
     opts = {"connect_mode": "under-reset", "reset_type": "hw", "frequency": a.speed, "resume_on_disconnect": False}
+    if a.no_nrst:
+        opts.update(connect_mode="halt", reset_type="sw")
     with ConnectHelper.session_with_chosen_probe(target_override=TARGET, options=opts) as s:
         t = s.target
         if a.erase:
@@ -80,6 +84,9 @@ def main():
             print(f"FLASH_OPTR    0x{t.read32(0x40022020):08X}")
             print("flash[0:16]  ", " ".join(f"{w:08X}" for w in t.read_memory_block32(FLASH, 4)))
         t.halt()
+    if a.no_nrst:
+        print("done, core halted: unplug and replug the board's USB-C to start it")
+        return
     # The firmware turns SWDIO/SWCLK into LED lines, so the debug session has to be closed before it runs:
     # pulse NRST from the probe instead of resetting through pyOCD.
     import pylink, time
