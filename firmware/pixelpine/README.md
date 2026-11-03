@@ -84,7 +84,7 @@ connect-under-reset (which `flash.py` does).
 - **Watchdog:** independent watchdog on the LSI (which has to be switched on first on the PY32), ~1 s, refreshed
   every frame; product build only, so the debug builds can halt. Checked with a test build (`-DKEEP_SWD
   -DWDT_TEST`): a deliberate hang from the debugger rebooted Pine after ~1 s.
-- **Version:** `"PixelPine PP-240-WW fw 1.0.0"` at 0x080000C0, right after the vector table, readable over SWD.
+- **Version:** `"PixelPine PP-240-WW fw 0.1.0"` at 0x080000C0, right after the vector table, readable over SWD.
 - **Frame budget:** a frame is 20 ms. Most frames take 4-12 ms; a 205 s run of the normal firmware (calib build)
   had no late frame and a worst frame of 19.0 ms. A transition between the two heaviest shows with a
   face overlay can take up to ~24 ms; the main loop then runs the next frame's logic without rebuilding the LED

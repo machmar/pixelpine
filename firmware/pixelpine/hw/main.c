@@ -29,7 +29,7 @@ __attribute__((section(".isr_vector"), used)) static const vec_t vectors[16 + 32
 };
 
 /* firmware version, at a fixed address right after the vector table (technical file item 14: readable over SWD) */
-__attribute__((section(".fw_version"), used)) const char fw_version[32] = "PixelPine PP-240-WW fw 1.0.0";
+__attribute__((section(".fw_version"), used)) const char fw_version[32] = "PixelPine PP-240-WW fw 0.1.0";
 
 static volatile uint8_t tick, pending;
 volatile uint32_t frame_no, frame_cycles, frame_cycles_max, frames_late;   /* read with the debugger */
