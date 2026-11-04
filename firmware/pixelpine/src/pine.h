@@ -102,8 +102,8 @@ void engine_reset(void);
 /* ---------- touch star classifier (touch.c) and brain (brain.c) ---------- */
 enum { G_HOVER, G_TAP, G_PRESS, G_SQUEEZE, G_TICKLE, G_PET_START, G_PET_END };
 typedef struct {
-  double raw, now, t0, hover_t, off_t, taps[8], last_t;
-  uint8_t touching, pressed, squeezed, petting, hovering, ntaps, last;
+  double raw, now, t0, hover_t, off_t, taps[8], last_t, deep_t;
+  uint8_t touching, pressed, squeezed, petting, hovering, ntaps, last, deep;   /* deep: reached the press band */
 } touch_t;
 extern touch_t touch;
 #define TH_HOVER 0.08
@@ -136,5 +136,6 @@ void pine_init(double bond);
 void pine_frame(double touch_raw, uint8_t *q);   /* q[i] = 8-bit BCM level of LED i (gamma 2.2) */
 void pine_begin(double touch_raw);               /* the same frame in three steps, without a level buffer: */
 uint8_t pine_level(int i);                       /*   level of LED i (call for each LED once) */
+uint16_t pine_level10(int i);                    /*   the same at 10 bits, for the board's scan */
 void pine_end(void);
 extern uint16_t pine_mix[NLED];                  /* Q12 perceived brightness of the last frame (tests) */

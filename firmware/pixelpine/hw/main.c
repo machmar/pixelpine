@@ -98,7 +98,7 @@ int main(void) {
         uint32_t c0 = SYSTICK->CVR;
         engine_tick(FW_DT);
         uint32_t c1 = CYC(c0);
-        scan_show(pine_level);
+        scan_show(pine_level10);
         engine_end_frame();
         uint32_t c = CYC(c0);
         if (c1 > bench_part[2]) bench_part[2] = c1;
@@ -112,11 +112,11 @@ int main(void) {
 #elif defined(DIAG)
 /* ghosting diagnosis: 6 s each, spoken order: all off / top LED full / top LED dim / whole tree evenly at 64 */
 static volatile uint8_t pat;
-static uint8_t diag_level(int i) {
+static uint16_t diag_level(int i) {
   switch (pat) {
-  case 1: return i == 1 ? 255 : 0;
-  case 2: return i == 1 ? 16 : 0;
-  case 3: return 64;
+  case 1: return i == 1 ? 1023 : 0;
+  case 2: return i == 1 ? 64 : 0;
+  case 3: return 256;
   default: return 0;
   }
 }
@@ -136,7 +136,7 @@ int main(void) {
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;
-static uint8_t demo_level(int i) { return gamma8(show_px(&demo.sh, demo.out, i)); }
+static uint16_t demo_level(int i) { return gamma10(show_px(&demo.sh, demo.out, i)); }
 int main(void) {
   clock_init();
   scan_init();
@@ -173,10 +173,60 @@ static void bond_tick(void) {
   bond_saved = b; bond_frames = 0;
 }
 
+#ifdef TOUCHREC
+/* Touch recorder (python build.py touchrec, read with test/touchrec.py): the product firmware, LEDs lit, logging
+ * every touch episode (level >= touch .. release). After REC_S seconds the LEDs go dark and PA13/PA14 return to
+ * SWD with their pulls: plug the probe in then (never before: in this build they are LED lines L8/L9). */
+#define REC_S 120
+typedef struct { uint8_t t0, dur, peak, f_press, f_sq, evg[3], evf[3]; } ep_t;   /* 11 B */
+#define NEP 8
+volatile ep_t rec_ep[NEP];   /* t0 in s; dur, f_* and evf in frames from touch start; peak level x128; evg = gesture + 1 */
+volatile uint8_t rec_n, rec_frozen;
+volatile uint32_t rec_gpio_cycles;                   /* 64 GPIO MODER stores, in CPU cycles: IOPORT = 64 */
+extern volatile uint32_t touch_events;
+extern volatile uint8_t touch_event_last;
+extern volatile q12 touch_level_last;
+static void rec_tick(void) {
+  static uint8_t on;
+  static uint32_t ev0;
+  q12 l = touch_level_last;
+  uint8_t l7 = l >= 255 * 32 ? 255 : (uint8_t)(l >> 5);
+  volatile ep_t *e = &rec_ep[rec_n < NEP ? rec_n : 0];
+  if (!on && touch.touching && rec_n < NEP) {
+    on = 1;
+    e->t0 = (uint8_t)(frame_no / FPS); e->dur = e->peak = 0; e->f_press = e->f_sq = 255;
+    for (int k = 0; k < 3; k++) e->evg[k] = e->evf[k] = 0;
+  }
+  if (on) {
+    if (l7 > e->peak) e->peak = l7;
+    if (e->f_press == 255 && l >= QC(TH_PRESS)) e->f_press = e->dur;
+    if (e->f_sq == 255 && l >= QC(TH_SQUEEZE)) e->f_sq = e->dur;
+    if (touch_events != ev0)
+      for (int k = 0; k < 3; k++) if (!e->evg[k]) { e->evg[k] = (uint8_t)(touch_event_last + 1); e->evf[k] = e->dur; break; }
+    if (e->dur < 255) e->dur++;
+    if (!touch.touching) { on = 0; rec_n++; }
+  }
+  ev0 = touch_events;
+  if (frame_no >= REC_S * FPS) {
+    scan_pause();                                    /* every line floating, LEDs dark */
+    GPIOA->PUPDR |= 0x24000000u;                     /* SWDIO pull-up, SWCLK pull-down, as after reset */
+    GPIOA->MODER = (GPIOA->MODER & ~0x3C000000u) | 0x28000000u;   /* PA13 / PA14 back to SWD (AF0) */
+    rec_frozen = 1;
+    for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); }   /* SysTick still wakes it every 20 ms */
+  }
+}
+#endif
+
 int main(void) {
   clock_init();
   scan_init();
   sense_init();
+#ifdef TOUCHREC
+  SYSTICK->RVR = 0xFFFFFFu; SYSTICK->CVR = 0; SYSTICK->CSR = 5;
+  { uint32_t c0 = SYSTICK->CVR;
+    __asm__ volatile(".rept 64\n str %1, [%0]\n .endr" ::"l"(&GPIOB->MODER), "l"(IDLE_B) : "memory");
+    rec_gpio_cycles = (c0 - SYSTICK->CVR) & 0xFFFFFFu; }
+#endif
   uint32_t seed = 0x9e3779b9u;                       /* each tree its own personality: ADC noise */
   for (int k = 0; k < 16; k++) {
     for (volatile int w = 0; w < 3000; w++) {}
@@ -201,10 +251,13 @@ int main(void) {
     __asm__ volatile("cpsid i"); pending--; __asm__ volatile("cpsie i");
     uint32_t c0 = SYSTICK->CVR;
     pine_begin(sense_touch_level(sense_touch_raw()));
-    if (!pending) scan_show(pine_level);
+    if (!pending) scan_show(pine_level10);
     else frames_late++;
     pine_end();
     bond_tick();
+#ifdef TOUCHREC
+    rec_tick();
+#endif
 #ifdef WDT_TEST
     while (debug_hang) {}
 #endif

@@ -6,7 +6,9 @@
   python build.py bench           CPU-time bench, keeps SWD alive (read it with test/readbench.py)
   python build.py calib           product firmware with SWD kept alive (lines L8/L9 dark) for sensor calibration
   python build.py diag            LED test patterns, 6 s each: all off / top LED full / top LED dim / all at 64
-  python build.py flash [target]  build, then program the board through the J-Link (../flash/flash.py)
+  python build.py touchrec        product firmware + touch-episode recorder; LEDs off and SWD back after 180 s
+  python build.py flash [target]  build, then program the board through the J-Link (../flash/flash.py);
+                                  target = showcycle or touchrec
 """
 import glob
 import os
@@ -77,9 +79,11 @@ if __name__ == "__main__":
     if args[:1] == ["host"]:
         host()
     elif args[:1] == ["flash"]:
-        hexfile = arm(showcycle=args[1:2] == ["showcycle"])
+        hexfile = arm(showcycle=args[1:2] == ["showcycle"], extra="touchrec" if args[1:2] == ["touchrec"] else None)
         subprocess.run([sys.executable, os.path.join(HERE, "..", "flash", "flash.py"), os.path.join(HERE, hexfile)],
                        check=True)
+    elif args[:1] == ["touchrec"]:
+        arm(extra="touchrec")
     else:
         arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"],
             diag=args[:1] == ["diag"])

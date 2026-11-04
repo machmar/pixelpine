@@ -25,6 +25,7 @@ uint8_t pine_level(int i) {
 #endif
   return gamma8(v);
 }
+uint16_t pine_level10(int i) { return gamma10(qclamp(engine_px(i))); }   /* the board's scan */
 void pine_end(void) { engine_end_frame(); }
 
 void pine_frame(double touch_raw, uint8_t *q) {

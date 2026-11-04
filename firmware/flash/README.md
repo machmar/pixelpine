@@ -46,6 +46,7 @@ pyOCD uses the flash algorithm from Puya's pack and drives the J-Link as a plain
 ```bash
 py -3 firmware/flash/flash.py --info              # VTref, chip ID, boot mode, first flash words
 py -3 firmware/flash/flash.py firmware.hex        # program + verify + reset (.hex, or .bin at 0x08000000)
+py -3 firmware/flash/flash.py --hold 20 firmware.hex   # the same, NRST held 20 s: unplug SWDIO/SWCLK meanwhile
 py -3 firmware/flash/flash.py --erase firmware.hex
 ```
 

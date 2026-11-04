@@ -51,6 +51,9 @@ def main():
     ap.add_argument("--speed", type=int, default=1_000_000, help="SWD clock in Hz")
     ap.add_argument("--cmsis", action="store_true",
                     help="use a CMSIS-DAP probe (e.g. Flipper Zero's DAP Link app) instead of the J-Link")
+    ap.add_argument("--hold", type=float, default=0, metavar="S",
+                    help="keep NRST low for S seconds after programming: unplug SWDIO/SWCLK meanwhile, so the "
+                         "firmware never runs with the probe on its LED lines L8/L9")
     ap.add_argument("--no-nrst", action="store_true",
                     help="NRST not wired (blank board only): plain connect, no reset at the end; power-cycle to start")
     a = ap.parse_args()
@@ -102,7 +105,15 @@ def main():
     import pylink, time
     jl = pylink.JLink()
     jl.open()
-    jl.set_reset_pin_low(); time.sleep(0.02); jl.set_reset_pin_high()
+    jl.set_reset_pin_low()
+    if a.hold > 0:
+        print(f"NRST held low for {a.hold:.0f} s: unplug SWDIO and SWCLK now", flush=True)
+        t_end = time.time() + a.hold
+        while time.time() < t_end:
+            time.sleep(1)
+            print(f"  {max(0, t_end - time.time()):.0f} s", flush=True)
+    time.sleep(0.02)
+    jl.set_reset_pin_high()
     jl.close()
     print("reset (NRST), running")
 

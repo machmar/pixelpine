@@ -1085,7 +1085,7 @@ const sceneDone = () => { const s = sceneNow(); return s.kind === "face" && s.do
 const TH = { hover: 0.08, touch: 0.35, press: 0.65, squeeze: 1.0, max: 1.5 };
 const touch = {
   raw: 0, script: null, scriptT: 0, down: false, mod: "", mm: null,
-  touching: false, t0: 0, pressed: false, squeezed: false, petting: false,
+  touching: false, t0: 0, pressed: false, squeezed: false, petting: false, deep: false, deepT: 0,
   hoverT: 0, hovering: false, offT: 0, taps: [], last: "—", lastT: -9, now: 0,
 };
 const SCRIPTS = {
@@ -1116,16 +1116,21 @@ function touchTick(dt) {
   if (touch.raw < 0) touch.raw = 0;
   const r = touch.raw, now = touch.now;
   if (!touch.touching && r >= TH.touch) {
-    Object.assign(touch, { touching: true, t0: now, pressed: false, squeezed: false, petting: false });
+    Object.assign(touch, { touching: true, t0: now, pressed: false, squeezed: false, petting: false, deep: false });
   }
   if (touch.touching) {
     const d = now - touch.t0;
+    /* A real squeeze climbs through the press band for up to 1.3 s before it reaches squeeze level (measured on the
+       board, 2026-11-04), so a press is only decided on release, or after 1.5 s held in the band. */
+    if (r >= TH.press && !touch.deep) { touch.deep = true; touch.deepT = now; }
     if (r >= TH.squeeze && !touch.squeezed && d > 0.08) { touch.squeezed = true; emit("squeeze"); }
-    else if (r >= TH.press && r < TH.squeeze && !touch.pressed && !touch.squeezed && d > 0.15) { touch.pressed = true; emit("press"); }
-    if (!touch.pressed && !touch.squeezed && !touch.petting && d > 0.6) { touch.petting = true; emit("petStart"); }
+    else if (r >= TH.press && r < TH.squeeze && !touch.pressed && !touch.squeezed && !touch.petting &&
+             now - touch.deepT > 1.5) { touch.pressed = true; emit("press"); }
+    if (!touch.pressed && !touch.squeezed && !touch.petting && !touch.deep && d > 0.6) { touch.petting = true; emit("petStart"); }
     if (r < TH.touch * 0.8) {
       touch.touching = false;
       if (touch.petting) { touch.petting = false; emit("petEnd"); }
+      else if (touch.deep && !touch.pressed && !touch.squeezed && d > 0.15) { touch.pressed = true; emit("press"); }
       else if (!touch.pressed && !touch.squeezed && d < 0.45) {
         touch.taps = touch.taps.filter(x => now - x < 1.4); touch.taps.push(now);
         if (touch.taps.length >= 3) { touch.taps = []; emit("tickle"); } else emit("tap");

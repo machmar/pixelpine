@@ -35,6 +35,7 @@ q12 qpow16(q12 x), qpow12(q12 x), qpow14(q12 x);   /* x^1.6, x^1.2, x^1.4 for 0 
 uint32_t isqrt32(uint32_t v);
 uint32_t qatan2(int32_t y, int32_t x);   /* atan2 in turns, ~0.004 rad */
 uint8_t gamma8(q12 v);                    /* round(255 * v^2.2): the simulator's 8-bit "raw scan" level */
+uint16_t gamma10(q12 v);                  /* round(1023 * v^2.2): the board's 10-bit scan level */
 double noise2d(double x, double y);       /* noise2 in double, for per-frame scalars (exact as the JS) */
 double jsin(double x), jcos(double x);    /* Math.sin / Math.cos, bit-exact (jsmath.c) */
 double jfmod(double x, double y);         /* JS x % y for x >= 0, y > 0 */

@@ -51,10 +51,13 @@ uint16_t sense_touch_raw(void) {                                 /* mean of the 
  * (2026-11-03, README.md "Touch calibration"): a resting finger settles near r = 0.44, a firm press near 0.27, a
  * pinch through front and back near 0.20; a finger 1 cm away doesn't register. Piecewise-linear onto the
  * simulator's scale: its thresholds (touch 0.35, press 0.65, squeeze 1.0) sit halfway between those, and the touch
- * threshold sits at r = 0.82 because contact takes a few hundred ms to build up and a quick tap must still count. */
+ * threshold sits at r = 0.82 because contact takes a few hundred ms to build up and a quick tap must still count.
+ * Recalibrated 2026-11-04: those ratios were measured with the J-Link's ground attached, which ties the board to the
+ * PC and makes the hum (and so the drop) bigger. Free-standing on its own USB supply, five squeezes bottomed out at
+ * r = 0.27-0.34 instead of ~0.20, so squeeze now sits at r = 0.38 and press at 0.47. */
 static const struct { uint16_t r; uint16_t lvl; } MAP[] = {   /* r and level in Q12, r falling */
-  { 4096, 0 }, { QC(0.82), QC(0.35) }, { QC(0.44), QC(0.5) }, { QC(0.35), QC(0.65) }, { QC(0.27), QC(0.82) },
-  { QC(0.235), QC(1.0) }, { QC(0.19), QC(1.32) }, { 0, QC(1.5) },
+  { 4096, 0 }, { QC(0.82), QC(0.35) }, { QC(0.58), QC(0.5) }, { QC(0.47), QC(0.65) }, { QC(0.42), QC(0.82) },
+  { QC(0.38), QC(1.0) }, { QC(0.28), QC(1.32) }, { 0, QC(1.5) },
 };
 static int32_t base8;                               /* untouched reading, x256 */
 static uint16_t hist[3], still_frames;

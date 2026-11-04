@@ -18,16 +18,22 @@ void touch_tick(double raw, double dt) {
   touch.raw = raw;
   double r = raw, now = touch.now;
   if (!touch.touching && r >= TH_TOUCH) {
-    touch.touching = 1; touch.t0 = now; touch.pressed = touch.squeezed = touch.petting = 0;
+    touch.touching = 1; touch.t0 = now; touch.pressed = touch.squeezed = touch.petting = touch.deep = 0;
   }
   if (touch.touching) {
     double d = now - touch.t0;
+    /* A real squeeze climbs through the press band for up to 1.3 s before it reaches squeeze level (recorded on the
+     * board, 2026-11-04: all 8 squeezes fired "press" first, which Pine answers like a tap). So a press is only
+     * decided on release, or after 1.5 s held in the band; a touch that went that deep is never a pet. */
+    if (r >= TH_PRESS && !touch.deep) { touch.deep = 1; touch.deep_t = now; }
     if (r >= TH_SQUEEZE && !touch.squeezed && d > 0.08) { touch.squeezed = 1; emit(G_SQUEEZE); }
-    else if (r >= TH_PRESS && r < TH_SQUEEZE && !touch.pressed && !touch.squeezed && d > 0.15) { touch.pressed = 1; emit(G_PRESS); }
-    if (!touch.pressed && !touch.squeezed && !touch.petting && d > 0.6) { touch.petting = 1; emit(G_PET_START); }
+    else if (r >= TH_PRESS && r < TH_SQUEEZE && !touch.pressed && !touch.squeezed && !touch.petting &&
+             now - touch.deep_t > 1.5) { touch.pressed = 1; emit(G_PRESS); }
+    if (!touch.pressed && !touch.squeezed && !touch.petting && !touch.deep && d > 0.6) { touch.petting = 1; emit(G_PET_START); }
     if (r < TH_TOUCH * 0.8) {
       touch.touching = 0;
       if (touch.petting) { touch.petting = 0; emit(G_PET_END); }
+      else if (touch.deep && !touch.pressed && !touch.squeezed && d > 0.15) { touch.pressed = 1; emit(G_PRESS); }
       else if (!touch.pressed && !touch.squeezed && d < 0.45) {
         uint8_t n = 0;
         for (uint8_t k = 0; k < touch.ntaps; k++) if (now - touch.taps[k] < 1.4) touch.taps[n++] = touch.taps[k];
