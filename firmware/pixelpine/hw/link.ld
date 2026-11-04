@@ -15,6 +15,7 @@ SECTIONS
   .ARM.exidx : { *(.ARM.exidx*) } > FLASH
   .data   : { _data_start = .; *(.ramfunc .ramfunc.*) *(.data .data.*) . = ALIGN(4); _data_end = .; } > RAM AT > FLASH
   _data_load = LOADADDR(.data);
+  .noinit (NOLOAD) : { *(.noinit .noinit.*) . = ALIGN(4); } > RAM   /* kept across resets (crash record) */
   .bss (NOLOAD) : { _bss_start = .; *(.bss .bss.* COMMON) . = ALIGN(4); _bss_end = .; } > RAM
   _stack_top = ORIGIN(RAM) + LENGTH(RAM);
   ASSERT(_bss_end + STACK_RESERVE <= _stack_top, "RAM overflow: static data + stack reserve > 8 KB")

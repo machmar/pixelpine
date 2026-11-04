@@ -20,15 +20,26 @@ void Reset_Handler(void) {
   for (;;) {}
 }
 
-/* a crash: every line floating first, so a frozen scan can't hold an LED on; the watchdog then resets the chip */
+/* a crash: every line floating first, so a frozen scan can't hold an LED on; the watchdog then resets the chip.
+ * crash_rec survives the reset (.noinit): magic, the faulting PC and LR, a count. */
+__attribute__((section(".noinit"))) volatile uint32_t crash_rec[4];
 static void default_handler(void) {
   GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
   for (;;) {}
 }
+void fault_c(uint32_t *sp) {
+  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
+  if (crash_rec[0] != 0xC4A5C4A5u) { crash_rec[0] = 0xC4A5C4A5u; crash_rec[3] = 0; }
+  crash_rec[1] = sp[6]; crash_rec[2] = sp[5]; crash_rec[3]++;
+  for (;;) {}
+}
+__attribute__((naked)) static void hardfault_handler(void) {
+  __asm__ volatile("mrs r0, msp\n b fault_c");
+}
 typedef void (*vec_t)(void);
 /* Cortex-M0+: initial stack pointer, 15 system exceptions, then the 32 peripheral interrupts */
 __attribute__((section(".isr_vector"), used)) static const vec_t vectors[16 + 32] = {
-  [0] = (vec_t)&_stack_top, [1] = Reset_Handler, [2] = default_handler, [3] = default_handler,
+  [0] = (vec_t)&_stack_top, [1] = Reset_Handler, [2] = default_handler, [3] = hardfault_handler,
   [15] = SysTick_Handler, [16 + TIM1_IRQn] = TIM1_BRK_UP_TRG_COM_IRQHandler,
 };
 
@@ -206,17 +217,33 @@ int main(void) {
 }
 #else
 #ifdef LISTEN
-/* experiment 4: touch-field listening while Pine runs. Every few frames the LED scan pauses for a short gap, the
- * 7 ADC lines L0-L6 float (every other line at 0 V) and are sampled round-robin; per line the spread of its samples
- * (mains hum from a finger) goes into lbin[bin][line] (max over each 3 s, /16). 0-45 s: 4 ms every 100 ms,
- * 45-90 s: 8 ms every 250 ms. At 90 s every LED goes off and it idles, so the debugger can halt it safely. */
-#define LSECS 31                                       /* 3 s bins */
-volatile uint8_t lbin[LSECS][7];                       /* [3-second bin][line] */
+/* experiment 4: touch-field listening while Pine runs, paced by the tree itself. Twice (gap setting 1, then 2): the
+ * tree shows the digit, then Pine runs normally for 8 s (hands off), then each of 4 spots blinks twice and the
+ * user holds a fingertip there for ~9 s. During Pine the LED scan pauses for short gaps in which the 7 ADC lines
+ * L0-L6 float (every other line at 0 V) and are sampled round-robin; each line's spread of samples (mains hum from
+ * a finger, /16) is summed under the step on show. Setting 1: 4 ms gaps every 100 ms, setting 2: 8 ms every 250 ms.
+ * At the end every LED goes off and PA13/PA14 go back to SWD, so the probe's wires can be plugged back in and lsum
+ * read without halting. A normal build: PA13/PA14 are LED lines, the probe's SWD wires stay unplugged while it runs. */
+#define LSTEPS 5                                       /* rest + 4 spots */
+volatile uint16_t lsum[2][LSTEPS][7], lcnt[2][LSTEPS];
 volatile uint32_t lframe, ldone;
+static uint8_t lshow;                                  /* 0 = Pine, 1 = digit, 2 = spot cue */
+static uint8_t lphase, lstep;
+static const int8_t SPOT[4][2] = { { 0, 18 }, { 5, 12 }, { 2, 6 }, { -6, 17 } };   /* gx, gy: low-mid, mid-right, up-right, low-left */
+static uint8_t listen_level(int i) {
+  int gx = led_gx[i], gy = led_gy[i];
+  if (lshow == 1) {                                    /* a 3 x 5 digit, rows gy 7-11 */
+    static const uint8_t D[2][5] = { { 2, 6, 2, 2, 7 }, { 7, 1, 7, 4, 7 } };   /* bit 2 = left column */
+    int r = gy - 7, c = gx + 1;
+    return r >= 0 && r < 5 && c >= 0 && c < 3 && (D[lphase][r] >> (2 - c) & 1) ? 255 : 0;
+  }
+  int dx = gx - SPOT[lstep - 1][0], dy = gy - SPOT[lstep - 1][1];
+  return dx * dx + dy * dy <= 2 ? 255 : 0;
+}
 static void listen_gap(uint32_t ms) {
   scan_pause();
   GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
-  GPIOA->MODER = (IDLE_A & ~0x0300C000u) | 0x01004000u | 0x3FFFu;   /* PA0-PA6 analog, PA7 / PA12 low */
+  GPIOA->MODER = (IDLE_A & ~0x3F00C000u) | 0x15004000u | 0x3FFFu;   /* PA0-PA6 analog; PA7, PA12-PA14 low */
   GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;
   GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
   uint16_t mn[7], mx[7];
@@ -233,18 +260,29 @@ static void listen_gap(uint32_t ms) {
   }
   GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
   scan_resume();
-  uint32_t sec = lframe / (3 * FPS);
-  if (sec < LSECS)
-    for (int k = 0; k < 7; k++) {
-      uint32_t v = (uint32_t)(mx[k] - mn[k]) / 16;
-      if (v > lbin[sec][k]) lbin[sec][k] = (uint8_t)v;
-    }
+  for (int k = 0; k < 7; k++) lsum[lphase][lstep][k] = (uint16_t)(lsum[lphase][lstep][k] + (mx[k] - mn[k]) / 16);
+  lcnt[lphase][lstep]++;
 }
+/* per phase, in frames: digit 0-100, rest 100-500, spot s: cue at 500 + 500 s (4 blinks of 0.15 s), then held */
 static void listen_tick(void) {
-  uint32_t f = ++lframe;
-  if (f < 45u * FPS) { if (f % 5 == 0) listen_gap(4); }
-  else if (f < 90u * FPS) { if (f % 12 == 0) listen_gap(8); }
-  else { scan_pause(); ldone = 1; for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); } }
+  uint32_t f = lframe++, p = f / 2500, t = f % 2500;
+  if (p >= 2) {
+    scan_pause();
+    GPIOA->MODER = (IDLE_A & ~0x3C000000u) | 0x28000000u;   /* every line floating, PA13/PA14 back to SWD */
+    ldone = 1;
+    for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); }
+  }
+  lphase = (uint8_t)p;
+  if (t < 100) { lshow = 1; lstep = 0; return; }
+  if (t < 500) { lshow = 0; lstep = 0; }
+  else {
+    uint32_t s = (t - 500) / 500, u = (t - 500) % 500;
+    lstep = (uint8_t)(s + 1);
+    lshow = u < 30 && (u / 8) % 2 == 0 ? 2 : 0;
+    if (u < 130) return;                              /* the cue and ~2 s to reach the spot: not measured */
+  }
+  if (t < 200) return;                                /* the first 2 s of rest: not measured either */
+  if (p == 0 ? f % 5 == 0 : f % 12 == 0) listen_gap(p == 0 ? 4 : 8);
 }
 #endif
 /* Room light: rev A can't sense it (README.md, "Room light"), so Pine stays in the simulator's default "lights on". */
@@ -294,7 +332,11 @@ int main(void) {
     __asm__ volatile("cpsid i"); pending--; __asm__ volatile("cpsie i");
     uint32_t c0 = SYSTICK->CVR;
     pine_begin(sense_touch_level(sense_touch_raw()));
+#ifdef LISTEN
+    if (!pending) scan_show(lshow ? listen_level : pine_level);
+#else
     if (!pending) scan_show(pine_level);
+#endif
     else frames_late++;
     pine_end();
     bond_tick();
