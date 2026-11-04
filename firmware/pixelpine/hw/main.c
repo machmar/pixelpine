@@ -119,58 +119,62 @@ int main(void) {
   }
 }
 #elif defined(TOUCHFIELD)
-/* experiment: the LED lines L0-L6 (PA0-PA6, ADC inputs) and the star (PA7) as touch electrodes. No LED is ever
- * driven: every line not being measured is held at 0 V (the SWD lines L8/L9 excepted). Three methods per line:
- *   A charge sharing with the ADC's sample cap (as the star), B timed RC charge through the internal pull-up
- *   for 2 us then sampled (~1 V, far below the LEDs' forward voltage), C mains hum: spread of 16 floating samples
- *   over 20 ms. One round every 600 ms into rec[], 120 rounds (72 s), then it stops; read rec after halting. */
-#define NR 120
-volatile uint16_t rec[NR][3][8];
+/* experiment 3: mains hum on the LED lines as a touch field. No LED is ever driven: every line not being measured
+ * is held at 0 V (the SWD lines L8/L9 excepted: the probe drives them). Per 800 ms round, for each of the 14 other
+ * lines: the share of time the floating line reads digital high, listened for 2, 5 and 20 ms (x255); and for the
+ * ADC lines L0-L6 the spread of 16 ADC samples over 20 ms. 125 rounds (100 s), then it stops; read after halting. */
+#define NR 125
+typedef struct { uint8_t dig[3][14]; uint8_t adc[7]; } rnd_t;
+volatile rnd_t rec[NR];
 volatile uint32_t nrec;
+static const uint8_t LPORT[14] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2 };    /* L0-L7, L10-L15 */
+static const uint8_t LPIN[14] = { 0, 1, 2, 3, 4, 5, 6, 12, 5, 6, 7, 0, 1, 4 };
+static gpio_t *const PORT[3] = { GPIOA, GPIOB, GPIOF };
 static void hold_low(void) {
   GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
   GPIOA->MODER = (IDLE_A & ~0x0300FFFFu) | 0x01005555u;   /* PA0-PA7, PA12 out low (PA13/14 stay SWD) */
   GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;   /* PB5-PB7 out low */
   GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;   /* PF0, PF1, PF4 out low */
 }
-static uint16_t meas_share(int k) {
+static uint8_t listen(int k, uint32_t ms) {               /* share of samples high, x255; samples every ~40 us */
   hold_low();
-  (void)adc_read(12, 3);
-  GPIOA->MODER |= 3u << (2 * k);                         /* line k analog, floating at 0 V */
-  return adc_read((uint8_t)k, 0);
-}
-static uint16_t meas_rc(int k) {
+  gpio_t *g = PORT[LPORT[k]];
+  uint32_t b = LPIN[k], hi = 0, n = ms * 25;
+  g->MODER &= ~(3u << (2 * b));                           /* floating input */
+  for (uint32_t i = 0; i < n; i++) {
+    hi += (g->IDR >> b) & 1u;
+    for (volatile int w = 0; w < 60; w++) {}
+  }
   hold_low();
-  GPIOA->PUPDR = (GPIOA->PUPDR & ~(3u << (2 * k))) | (1u << (2 * k));   /* pull-up */
-  __asm__ volatile("cpsid i");
-  GPIOA->MODER &= ~(3u << (2 * k));                      /* input: charging through the pull-up starts */
-  for (volatile int w = 0; w < 3; w++) {}                 /* ~2 us of charging, always the same */
-  GPIOA->MODER |= 3u << (2 * k);                         /* analog: pull-up off, charging stops */
-  __asm__ volatile("cpsie i");
-  GPIOA->PUPDR &= ~(3u << (2 * k));
-  return adc_read((uint8_t)k, 0);
+  return (uint8_t)(hi * 255 / n);
 }
 int main(void) {
   clock_init();
   sense_init();
   SYSTICK->RVR = 0xFFFFFFu; SYSTICK->CVR = 0; SYSTICK->CSR = 5;
+  static const uint8_t WIN[3] = { 2, 5, 20 };
   while (nrec < NR) {
     uint32_t t0 = SYSTICK->CVR;
-    for (int k = 0; k < 8; k++) {
-      uint32_t a = 0, b = 0, mn = 4095, mx = 0, sum = 0;
-      for (int n = 0; n < 32; n++) { a += meas_share(k); b += meas_rc(k); }
+    for (int k = 0; k < 14; k++)
+      for (int w = 0; w < 3; w++) rec[nrec].dig[w][k] = listen(k, WIN[w]);
+    for (int k = 0; k < 7; k++) {
+      uint32_t mn = 4095, mx = 0;
       hold_low();
-      GPIOA->MODER |= 3u << (2 * k);                     /* C: line k floating, the rest at 0 V */
+      GPIOA->MODER |= 3u << (2 * k);
       for (int n = 0; n < 16; n++) {
         uint32_t v = adc_read((uint8_t)k, 3);
-        sum += v; if (v < mn) mn = v; if (v > mx) mx = v;
-        for (volatile int w = 0; w < 1500; w++) {}       /* ~1.25 ms apart: 16 samples cover 20 ms */
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+        for (volatile int w = 0; w < 1500; w++) {}
       }
-      rec[nrec][0][k] = (uint16_t)(a / 2); rec[nrec][1][k] = (uint16_t)(b / 2); rec[nrec][2][k] = (uint16_t)(mx - mn);
+      rec[nrec].adc[k] = (uint8_t)((mx - mn) > 1020 ? 255 : (mx - mn) / 4);
     }
     hold_low();
     nrec++;
-    while (((t0 - SYSTICK->CVR) & 0xFFFFFFu) < 24000u * 600u) {}   /* 600 ms per round */
+    for (uint32_t el = 0, prev = t0; el < 24000u * 800u;) {        /* 800 ms per round (SysTick wraps at 0.7 s) */
+      uint32_t now = SYSTICK->CVR;
+      el += (prev - now) & 0xFFFFFFu; prev = now;
+    }
   }
   hold_low();
   for (;;) __asm__ volatile("wfi");
