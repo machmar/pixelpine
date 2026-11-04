@@ -119,27 +119,61 @@ int main(void) {
   }
 }
 #elif defined(TOUCHFIELD)
-/* experiment: the LED lines L0-L6 (PA0-PA6, ADC inputs) as touch electrodes. No LED is ever driven. Every line is
- * held at 0 V, one floats and shares charge with the ADC's sample capacitor (stays near 1 V, far below the LEDs'
- * forward voltage). field[k] = sum of 16 samples of line k (L7 = the star, PA7) per round; rounds counts. */
-volatile uint32_t field[8], rounds;
+/* experiment: the LED lines L0-L6 (PA0-PA6, ADC inputs) and the star (PA7) as touch electrodes. No LED is ever
+ * driven: every line not being measured is held at 0 V (the SWD lines L8/L9 excepted). Three methods per line:
+ *   A charge sharing with the ADC's sample cap (as the star), B timed RC charge through the internal pull-up
+ *   for 2 us then sampled (~1 V, far below the LEDs' forward voltage), C mains hum: spread of 16 floating samples
+ *   over 20 ms. One round every 600 ms into rec[], 120 rounds (72 s), then it stops; read rec after halting. */
+#define NR 120
+volatile uint16_t rec[NR][3][8];
+volatile uint32_t nrec;
+static void hold_low(void) {
+  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
+  GPIOA->MODER = (IDLE_A & ~0x0300FFFFu) | 0x01005555u;   /* PA0-PA7, PA12 out low (PA13/14 stay SWD) */
+  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;   /* PB5-PB7 out low */
+  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;   /* PF0, PF1, PF4 out low */
+}
+static uint16_t meas_share(int k) {
+  hold_low();
+  (void)adc_read(12, 3);
+  GPIOA->MODER |= 3u << (2 * k);                         /* line k analog, floating at 0 V */
+  return adc_read((uint8_t)k, 0);
+}
+static uint16_t meas_rc(int k) {
+  hold_low();
+  GPIOA->PUPDR = (GPIOA->PUPDR & ~(3u << (2 * k))) | (1u << (2 * k));   /* pull-up */
+  __asm__ volatile("cpsid i");
+  GPIOA->MODER &= ~(3u << (2 * k));                      /* input: charging through the pull-up starts */
+  for (volatile int w = 0; w < 3; w++) {}                 /* ~2 us of charging, always the same */
+  GPIOA->MODER |= 3u << (2 * k);                         /* analog: pull-up off, charging stops */
+  __asm__ volatile("cpsie i");
+  GPIOA->PUPDR &= ~(3u << (2 * k));
+  return adc_read((uint8_t)k, 0);
+}
 int main(void) {
   clock_init();
   sense_init();
-  GPIOA->ODR = 0;
-  for (;;) {
-    uint32_t acc[8] = { 0 };
-    for (int n = 0; n < 16; n++)
-      for (int k = 0; k < 8; k++) {
-        GPIOA->MODER = (IDLE_A & ~0xFFFFu) | 0x5555u;          /* PA0-PA7 outputs low: discharged */
-        (void)adc_read(12, 3);                                  /* sample cap <- Vrefint */
-        GPIOA->MODER = (IDLE_A & ~0xFFFFu) | (0x5555u & ~(3u << (2 * k))) | (3u << (2 * k));   /* line k analog */
-        acc[k] += adc_read((uint8_t)k, 0);
-        for (volatile int w = 0; w < 300; w++) {}              /* spread the samples over ~20 ms */
+  SYSTICK->RVR = 0xFFFFFFu; SYSTICK->CVR = 0; SYSTICK->CSR = 5;
+  while (nrec < NR) {
+    uint32_t t0 = SYSTICK->CVR;
+    for (int k = 0; k < 8; k++) {
+      uint32_t a = 0, b = 0, mn = 4095, mx = 0, sum = 0;
+      for (int n = 0; n < 32; n++) { a += meas_share(k); b += meas_rc(k); }
+      hold_low();
+      GPIOA->MODER |= 3u << (2 * k);                     /* C: line k floating, the rest at 0 V */
+      for (int n = 0; n < 16; n++) {
+        uint32_t v = adc_read((uint8_t)k, 3);
+        sum += v; if (v < mn) mn = v; if (v > mx) mx = v;
+        for (volatile int w = 0; w < 1500; w++) {}       /* ~1.25 ms apart: 16 samples cover 20 ms */
       }
-    for (int k = 0; k < 8; k++) field[k] = acc[k];
-    rounds++;
+      rec[nrec][0][k] = (uint16_t)(a / 2); rec[nrec][1][k] = (uint16_t)(b / 2); rec[nrec][2][k] = (uint16_t)(mx - mn);
+    }
+    hold_low();
+    nrec++;
+    while (((t0 - SYSTICK->CVR) & 0xFFFFFFu) < 24000u * 600u) {}   /* 600 ms per round */
   }
+  hold_low();
+  for (;;) __asm__ volatile("wfi");
 }
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
