@@ -118,6 +118,29 @@ int main(void) {
     scan_show(diag_level);
   }
 }
+#elif defined(TOUCHFIELD)
+/* experiment: the LED lines L0-L6 (PA0-PA6, ADC inputs) as touch electrodes. No LED is ever driven. Every line is
+ * held at 0 V, one floats and shares charge with the ADC's sample capacitor (stays near 1 V, far below the LEDs'
+ * forward voltage). field[k] = sum of 16 samples of line k (L7 = the star, PA7) per round; rounds counts. */
+volatile uint32_t field[8], rounds;
+int main(void) {
+  clock_init();
+  sense_init();
+  GPIOA->ODR = 0;
+  for (;;) {
+    uint32_t acc[8] = { 0 };
+    for (int n = 0; n < 16; n++)
+      for (int k = 0; k < 8; k++) {
+        GPIOA->MODER = (IDLE_A & ~0xFFFFu) | 0x5555u;          /* PA0-PA7 outputs low: discharged */
+        (void)adc_read(12, 3);                                  /* sample cap <- Vrefint */
+        GPIOA->MODER = (IDLE_A & ~0xFFFFu) | (0x5555u & ~(3u << (2 * k))) | (3u << (2 * k));   /* line k analog */
+        acc[k] += adc_read((uint8_t)k, 0);
+        for (volatile int w = 0; w < 300; w++) {}              /* spread the samples over ~20 ms */
+      }
+    for (int k = 0; k < 8; k++) field[k] = acc[k];
+    rounds++;
+  }
+}
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;

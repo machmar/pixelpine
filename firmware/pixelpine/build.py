@@ -50,7 +50,7 @@ def arm(showcycle=False, bench=False, calib=False, diag=False, extra=None):
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",
          "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []),
-         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *(["-DDIAG"] if diag else []), *([f"-D{extra.upper()}"] if extra else []), *srcs,
+         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib or extra == "touchfield" else []), *(["-DDIAG"] if diag else []), *([f"-D{extra.upper()}"] if extra else []), *srcs,
          "-nostartfiles", "-Thw/link.ld", "--specs=nano.specs", "-Wl,--gc-sections", "-Wl,--no-warn-rwx-segments",
          f"-Wl,-Map=build/{name}.map", "-lm", "-o", elf])
     run([os.path.join(bindir, "arm-none-eabi-objcopy"), "-O", "ihex", elf, f"build/{name}.hex"])
@@ -82,4 +82,4 @@ if __name__ == "__main__":
                        check=True)
     else:
         arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"],
-            diag=args[:1] == ["diag"])
+            diag=args[:1] == ["diag"], extra="touchfield" if args[:1] == ["touchfield"] else None)

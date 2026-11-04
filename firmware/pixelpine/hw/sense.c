@@ -4,7 +4,7 @@
 #include "hw.h"
 
 
-static uint16_t adc_read(uint8_t ch, uint8_t smp) {
+uint16_t adc_read(uint8_t ch, uint8_t smp) {
   ADC1->SMPR = smp;
   ADC1->CHSELR = 1u << ch;
   ADC1->CR = 1u;                                    /* ADEN: this ADC clears it after every conversion */
