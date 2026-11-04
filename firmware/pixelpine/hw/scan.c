@@ -127,6 +127,12 @@ __attribute__((optimize("O2"))) void scan_show(uint8_t (*level)(int)) {
       uint16_t cb = (uint16_t)(1u << pc[j]);
       for (int b = 0; b < 8; b++) if ((q[j] >> b) & 1u) m[b] |= cb;
     }
+#ifdef KEEP_SWD
+    /* Debug builds keep SWDIO/SWCLK (lines L8/L9) on the probe, which holds SWDIO high: any LED from L8 to a line
+     * the scan pulls low would light at full current, almost all the time (it happened twice on the board). So
+     * these builds never light an LED: the masks stay empty and no line is ever driven. */
+    for (int b = 0; b < 8; b++) m[b] = 0;
+#endif
     TIM1->DIER = 0;
     for (int b = 0; b < 8; b++) masks[a][b] = m[b];
     TIM1->DIER = 1;

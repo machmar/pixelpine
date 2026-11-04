@@ -75,6 +75,10 @@ connect-under-reset (which `flash.py` does).
     through the anode's LEDs, a faint flash on each).
   - **Current-sharing compensation** (the simulator's "Compensated" model) is in `scan.c` behind `-DSHARE_COMP`
     but off: on the board, and in the simulator's own model, it made levels jitter frame to frame.
+  - **Debug builds never light LEDs:** in the `calib` / `bench` / `listen` builds SWDIO/SWCLK (lines L8/L9) stay
+    on the probe, which holds SWDIO high, so every LED from L8 to a line the scan pulls low lit at full current
+    (two "stuck LED" incidents). Those builds now keep every mask empty. All builds run the watchdog, and the
+    crash handler floats every line first.
   - **Never halt a running board:** a halted core freezes the scan with one slot's pins driven, so one LED
     gets steady current (~8-9 mA, bright but within the LED's rating). Measure with connect-under-reset or the
     `calib` / `bench` builds without halting, and use `python build.py diag` for test patterns.

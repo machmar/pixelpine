@@ -20,7 +20,11 @@ void Reset_Handler(void) {
   for (;;) {}
 }
 
-static void default_handler(void) { for (;;) {} }
+/* a crash: every line floating first, so a frozen scan can't hold an LED on; the watchdog then resets the chip */
+static void default_handler(void) {
+  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
+  for (;;) {}
+}
 typedef void (*vec_t)(void);
 /* Cortex-M0+: initial stack pointer, 15 system exceptions, then the 32 peripheral interrupts */
 __attribute__((section(".isr_vector"), used)) static const vec_t vectors[16 + 32] = {
@@ -201,6 +205,48 @@ int main(void) {
   }
 }
 #else
+#ifdef LISTEN
+/* experiment 4: touch-field listening while Pine runs. Every few frames the LED scan pauses for a short gap, the
+ * 7 ADC lines L0-L6 float (every other line at 0 V) and are sampled round-robin; per line the spread of its samples
+ * (mains hum from a finger) goes into lbin[bin][line] (max over each 3 s, /16). 0-45 s: 4 ms every 100 ms,
+ * 45-90 s: 8 ms every 250 ms. At 90 s every LED goes off and it idles, so the debugger can halt it safely. */
+#define LSECS 31                                       /* 3 s bins */
+volatile uint8_t lbin[LSECS][7];                       /* [3-second bin][line] */
+volatile uint32_t lframe, ldone;
+static void listen_gap(uint32_t ms) {
+  scan_pause();
+  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
+  GPIOA->MODER = (IDLE_A & ~0x0300C000u) | 0x01004000u | 0x3FFFu;   /* PA0-PA6 analog, PA7 / PA12 low */
+  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;
+  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
+  uint16_t mn[7], mx[7];
+  for (int k = 0; k < 7; k++) { mn[k] = 4095; mx[k] = 0; }
+  uint32_t c0 = SYSTICK->CVR, top = SYSTICK->RVR + 1, need = ms * 24000u;
+  for (;;) {
+    for (int k = 0; k < 7; k++) {
+      uint16_t v = adc_read((uint8_t)k, 3);
+      if (v < mn[k]) mn[k] = v;
+      if (v > mx[k]) mx[k] = v;
+    }
+    uint32_t now = SYSTICK->CVR, el = now <= c0 ? c0 - now : c0 + top - now;
+    if (el >= need) break;
+  }
+  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
+  scan_resume();
+  uint32_t sec = lframe / (3 * FPS);
+  if (sec < LSECS)
+    for (int k = 0; k < 7; k++) {
+      uint32_t v = (uint32_t)(mx[k] - mn[k]) / 16;
+      if (v > lbin[sec][k]) lbin[sec][k] = (uint8_t)v;
+    }
+}
+static void listen_tick(void) {
+  uint32_t f = ++lframe;
+  if (f < 45u * FPS) { if (f % 5 == 0) listen_gap(4); }
+  else if (f < 90u * FPS) { if (f % 12 == 0) listen_gap(8); }
+  else { scan_pause(); ldone = 1; for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); } }
+}
+#endif
 /* Room light: rev A can't sense it (README.md, "Room light"), so Pine stays in the simulator's default "lights on". */
 
 /* Pine's bond in flash: saved when it moved by >= 0.02, at most every 15 minutes (flash wear) */
@@ -232,7 +278,8 @@ int main(void) {
   bond_saved = store_load_bond();
   SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
   pine_init(bond_saved / 65535.0);
-#if !defined(KEEP_SWD) || defined(WDT_TEST)      /* independent watchdog, ~1 s on the 32 kHz LSI (not in debug builds) */
+#if 1                                             /* independent watchdog, ~1 s on the 32 kHz LSI, in every build:
+                                                    * a frozen or halted chip resets, and reset turns every pin off */
   RCC_CSR |= 1u;                                     /* LSI on: the watchdog's clock */
   for (uint32_t n = 0; !(RCC_CSR & 2u) && n < 100000u; n++) {}
   IWDG_KR = 0xCCCCu; IWDG_KR = 0x5555u; IWDG_PR = 4u; IWDG_RLR = 500u;
@@ -251,10 +298,13 @@ int main(void) {
     else frames_late++;
     pine_end();
     bond_tick();
+#ifdef LISTEN
+    listen_tick();
+#endif
 #ifdef WDT_TEST
     while (debug_hang) {}
 #endif
-#if !defined(KEEP_SWD) || defined(WDT_TEST)
+#if 1
     IWDG_KR = 0xAAAAu;
 #endif
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
