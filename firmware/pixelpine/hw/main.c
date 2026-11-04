@@ -194,6 +194,115 @@ int main(void) {
   hold_low();
   for (;;) __asm__ volatile("wfi");
 }
+#elif defined(DRAIN)
+/* experiment 5: drain first, then listen. A moving brightness wave keeps every line busy with the normal scan.
+ * Once per measured frame, at a random point (so the gaps never lock onto the mains phase), the scan pauses for one
+ * short gap, using settings A-E in turn: A = experiment 4 (no drain, float 0.7 ms); B-E = every line driven to 0 V
+ * for 5 us, then L0-L6 (analog mode: no Schmitt trigger, no pulls) and L11 float for 20 us / 0.2 / 0.7 / 2 ms while
+ * the others stay at 0 V. Then one ADC read per line (L0-L6), and the two comparators against 1/4 Vrefint (~0.3 V):
+ * COMP1 on PA1 = L1, COMP2 on PB6 = L11 - "did the line rise above 0.3 V at any time during the float".
+ * Rest (hands off), then 9 spots, each cued by 4 blinks of that spot; 100 s in all. At the end every LED goes off
+ * and PA13/PA14 go back to SWD: plug SWDIO / SWCLK back in and read with test/drain.py (no halt).
+ * A normal build: PA13/PA14 are LED lines, so the probe's SWD wires must stay unplugged while it runs. */
+#define NSET 5
+#define NSTEP 10
+#define NCH 9                                          /* L0-L6 ADC, COMP1 (L1), COMP2 (L11) */
+volatile uint32_t dsum[NSTEP][NSET][NCH], dsq[NSTEP][NSET][7];
+volatile uint16_t dcnt[NSTEP][NSET];
+volatile uint32_t dframe, ddone;
+static const uint16_t FLOAT_US[NSET] = { 700, 20, 200, 700, 2000 };
+static const int8_t DSPOT[9][2] = { { 0, 3 }, { -3, 8 }, { 3, 8 }, { -5, 12 }, { 0, 12 }, { 5, 12 },
+                                    { -6, 17 }, { 0, 18 }, { 6, 17 } };   /* gx, gy (gy 1 = top) */
+#define COMP1_CSR REG32(0x40010200u)
+#define COMP2_CSR REG32(0x40010210u)
+static uint8_t dshow, dspot;                           /* 0 = wave, 1 = spot cue on, 2 = cue off (dark) */
+static uint32_t dwave;
+static uint8_t drain_level(int i) {
+  int gx = led_gx[i], gy = led_gy[i];
+  if (dshow == 1) { int dx = gx - DSPOT[dspot][0], dy = gy - DSPOT[dspot][1]; return dx * dx + dy * dy <= 2 ? 255 : 0; }
+  if (dshow == 2) return 0;
+  uint32_t u = (uint32_t)(gy * 21 + gx * 9) + dwave * 3;
+  u &= 255u;
+  return (uint8_t)(u < 128 ? u * 2 : (255 - u) * 2);
+}
+static uint32_t since(uint32_t c0) {                   /* SysTick cycles elapsed (counts down, 50 Hz reload) */
+  uint32_t now = SYSTICK->CVR;
+  return now <= c0 ? c0 - now : c0 + SYSTICK->RVR + 1 - now;
+}
+static void drain_gap(int step, int set) {
+  uint32_t cmp = 0;
+  scan_pause();                                        /* every line floating input */
+  uint32_t oa = GPIOA->ODR, ob = GPIOB->ODR, of = GPIOF->ODR;   /* the scan's anode, put back afterwards */
+  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
+  if (set) {                                           /* drain: all 16 lines out low for 5 us */
+    GPIOA->MODER = (IDLE_A & ~0x3F00FFFFu) | 0x15005555u;
+    GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;
+    GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
+    for (volatile int w = 0; w < 12; w++) {}
+  }
+  /* listen: PA0-PA6 and PB6 analog (floating, lightest load); PA7 (star), PA12-14, PB5, PB7, PF0/1/4 out low */
+  GPIOA->MODER = (IDLE_A & ~0x3F00FFFFu) | 0x15007FFFu;
+  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00004000u | 0x00003000u | 0x00000400u;
+  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
+  uint32_t c0 = SYSTICK->CVR, need = FLOAT_US[set] * 24u;
+  while (since(c0) < need) cmp |= (COMP1_CSR >> 30 & 1u) | (COMP2_CSR >> 30 & 1u) << 1;
+  cmp |= (COMP1_CSR >> 30 & 1u) | (COMP2_CSR >> 30 & 1u) << 1;
+  uint16_t v[7];
+  for (int k = 0; k < 7; k++) v[k] = adc_read((uint8_t)k, 0);
+  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
+  GPIOA->ODR = oa; GPIOB->ODR = ob; GPIOF->ODR = of;
+  scan_resume();
+  for (int k = 0; k < 7; k++) { dsum[step][set][k] += v[k]; dsq[step][set][k] += (uint32_t)(v[k] >> 2) * (v[k] >> 2); }
+  dsum[step][set][7] += cmp & 1u; dsum[step][set][8] += cmp >> 1;
+  dcnt[step][set]++;
+}
+int main(void) {
+  clock_init();
+  scan_init();
+  sense_init();
+  RCC->APBENR2 |= (1u << 21) | (1u << 22);            /* COMP1, COMP2 clocks */
+  COMP1_CSR = 1u | 1u << 1 | 0u << 4 | 2u << 8;        /* on, Vrefint scaler on, INM = 1/4 Vrefint, INP = PA1, high speed */
+  COMP2_CSR = 1u | 0u << 4 | 1u << 8;                  /* on, INM = 1/4 Vrefint, INP = PB6 */
+  SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
+  RCC_CSR |= 1u;
+  for (uint32_t n = 0; !(RCC_CSR & 2u) && n < 100000u; n++) {}
+  IWDG_KR = 0xCCCCu; IWDG_KR = 0x5555u; IWDG_PR = 4u; IWDG_RLR = 500u;
+  for (uint32_t n = 0; (IWDG_SR & 3u) && n < 100000u; n++) {}
+  IWDG_KR = 0xAAAAu;
+  for (int w = 0; w < 10 * FPS; w++) {                 /* 10 s dark: time to unplug SWDIO / SWCLK */
+    while (!tick) __asm__ volatile("wfi");
+    tick = 0;
+    IWDG_KR = 0xAAAAu;
+  }
+  uint32_t rng = 0x2545F491u, ngap = 0;
+  for (;;) {
+    while (!tick) __asm__ volatile("wfi");
+    tick = 0;
+    IWDG_KR = 0xAAAAu;
+    uint32_t f = dframe++;
+    if (f >= 5000) break;
+    /* frames: rest 0-500 (measured from 100), spot s: 500 + 500 s; cue 0-40, hand moves to 140, measured to 500 */
+    int step = 0, measure = f >= 100;
+    dshow = 0;
+    if (f >= 500) {
+      uint32_t s = (f - 500) / 500, u = (f - 500) % 500;
+      step = (int)s + 1; dspot = (uint8_t)s;
+      if (u < 40) dshow = (u / 5) % 2 ? 2 : 1;
+      measure = u >= 140;
+    }
+    dwave = f;
+    scan_show(drain_level);
+    if (!measure) continue;
+    rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+    uint32_t c0 = SYSTICK->CVR, wait = (rng % 12000u) * 24u;           /* 0-12 ms into the frame */
+    while (since(c0) < wait) {}
+    drain_gap(step, (int)(ngap++ % NSET));
+  }
+  scan_pause();
+  GPIOA->MODER = (IDLE_A & ~0x3C000000u) | 0x28000000u;               /* PA13/PA14 back to SWD */
+  ddone = 1;
+  for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); }
+}
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;

@@ -82,4 +82,4 @@ if __name__ == "__main__":
                        check=True)
     else:
         arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"],
-            diag=args[:1] == ["diag"], extra=args[0] if args[:1] in (["touchfield"], ["listen"]) else None)
+            diag=args[:1] == ["diag"], extra=args[0] if args[:1] in (["touchfield"], ["listen"], ["drain"]) else None)
