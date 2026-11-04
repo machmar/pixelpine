@@ -45,12 +45,12 @@ def arm(showcycle=False, bench=False, calib=False, diag=False, extra=None):
     bindir = os.path.dirname(gcc)
     os.makedirs(os.path.join(HERE, "build"), exist_ok=True)
     name = extra or ("showcycle" if showcycle else "bench" if bench else "calib" if calib else "diag" if diag else "pixelpine")
-    srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
+    srcs = (["src/fx.c", "src/jsmath.c", "src/shows.c", "src/tables.c", "hw/sense.c"] if showcycle else SRC) + ["hw/main.c", "hw/scan.c"]
     srcs += [] if showcycle else sorted({p.replace("\\", "/") for p in glob.glob("hw/*.c", root_dir=HERE)} - {"hw/main.c", "hw/scan.c"})
     elf = f"build/{name}.elf"
     run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-Os", "-g", "-ffunction-sections", "-fdata-sections",
          "-ffreestanding", *COMMON, "-Ihw", *(["-DSHOWCYCLE"] if showcycle else []),
-         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib or extra == "touchfield" else []), *(["-DDIAG"] if diag else []), *([f"-D{extra.upper()}"] if extra else []), *srcs,
+         *(["-DBENCH", "-DKEEP_SWD"] if bench else []), *(["-DKEEP_SWD"] if calib else []), *(["-DDIAG"] if diag else []), *([f"-D{extra.upper()}"] if extra else []), *srcs,
          "-nostartfiles", "-Thw/link.ld", "--specs=nano.specs", "-Wl,--gc-sections", "-Wl,--no-warn-rwx-segments",
          f"-Wl,-Map=build/{name}.map", "-lm", "-o", elf])
     run([os.path.join(bindir, "arm-none-eabi-objcopy"), "-O", "ihex", elf, f"build/{name}.hex"])
@@ -82,4 +82,4 @@ if __name__ == "__main__":
                        check=True)
     else:
         arm(showcycle=args[:1] == ["showcycle"], bench=args[:1] == ["bench"], calib=args[:1] == ["calib"],
-            diag=args[:1] == ["diag"], extra=args[0] if args[:1] in (["touchfield"], ["listen"], ["drain"]) else None)
+            diag=args[:1] == ["diag"])

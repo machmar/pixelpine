@@ -7,7 +7,8 @@ rev A board on 2026-11-03.
 
 **Status:** running on the board. The PC build of the same C code is checked frame by frame against the simulator's
 own JavaScript (see [Matching the simulator](#matching-the-simulator)). Touch is calibrated on one board and one
-person. Room-light sensing turned out to be impossible on rev A (see [Room light](#room-light)).
+person. Room-light sensing turned out to be impossible on rev A (see [Room light](#room-light)), and a whole-tree
+touch field was tried and dropped (see [Touch field](#touch-field-tried-dropped)).
 
 ## Layout
 
@@ -193,6 +194,45 @@ So rev A keeps the simulator's default, lights on: Pine still gets tired, dozes 
 
 **Fix for rev B, at no cost:** leave one LED unpopulated (for example the L1 -> L0 one), so its partner L0 -> L1
 has no anti-parallel twin and works as a photodiode between frames. The tree loses one pixel.
+
+## Touch field (tried, dropped)
+
+The idea: use the 240-LED matrix itself as a touch surface, so a fingertip anywhere on the tree counts (Pine would
+look toward it, and a tap during a light show would send a ripple out from the finger). Tried on the board
+2026-11-04 in five experiments and three runs of a full driver, then dropped: **the signal depends on how the tree
+is powered**, and on the supplies a customer would actually use it is too weak to be reliable.
+
+| Run | Method | Result |
+|---|---|---|
+| 1 | Lines as capacitive electrodes (charge sharing, RC time) | A fingertip changes a line's ~100-200 pF by <= 0.4 %: lost in the noise |
+| 2 | Listen for the mains hum a finger brings, every other line at 0 V | Strong and position-dependent: the finger moves the lines it sits on |
+| 3 | 9 spots; digital inputs vs ADC | Digital inputs never see it (the hum stays below the input threshold); the ADC separates 7 of 9 spots |
+| 4 | Short listening gaps while Pine runs | Nothing: the lines still carry charge from the scan, which swamps the finger. 8 ms gaps flicker visibly |
+| 5 | **Drain first**: every line to 0 V for 5 us, then float L0-L6 (analog mode, the lightest load) 20 us-2 ms | All 9 spots stand out, each with its own line pattern, rest reading flat (noise < 8 counts); 0.2 ms of float is enough. Board on a laptop's USB port |
+| Driver | Drain gaps in the scan interrupt (2 per refresh, 0.23 ms, ~5 % of LED time), pattern match + interpolation | Powerbank: **no signal at all**. Wall charger: total rise 10-60 counts in one run, 7-14 in the next, against ~1 at rest; 3-4 of 9 spots placed right |
+
+**Why it depends on the supply.** The lines don't sense the finger's capacitance (run 1); they sense the 50 Hz hum
+a person carries, measured against the board's ground. On a laptop the board's ground is tied to mains and the
+difference is hundreds of counts. A USB wall charger links its output to mains only through a small capacitor, so
+the difference is weaker and changes with the charger and with how the person sits. On a powerbank the board floats
+along with the person and there is no difference to measure.
+
+**Why not keep it as an extra.** At 7-14 counts a touch is only 3-7x the rest noise: a threshold low enough to
+catch it is close to false touches (a wrong rest level made the tree "touched" with no hand on it in the last run),
+and weak patterns are too flat to tell the spots apart. Nothing on rev A raises the signal much: a 2 ms float gives
+~2x and costs visible LED time. A feature that works on some chargers and not others would read as a fault.
+
+Found along the way:
+- The PY32F003 has two comparators (COMP1 on PA1 = L1, COMP2 on PB6 = L11, against 1/4 Vrefint ~0.3 V). They do
+  see the hum at a ~0.3 V threshold (experiment 5), but add nothing the ADC doesn't give.
+- With the probe attached, SWDIO (line L8) is held high: any build that pulls lines low lights the L8 LEDs through
+  the probe. The experiments ran with SWDIO / SWCLK unplugged and read their results once at the end.
+- Polling the probe while the board runs pulsed RESET through the probe's wire and restarted the chip.
+
+**Rev B:** a whole-tree touch would need dedicated electrodes (a copper pad or ring per zone) on free ADC pins, which
+the 20-pin PY32F003 doesn't have, or a self-capacitance touch IC. The touch star stays the control: it measures
+capacitance, so it works on any supply. The experiment code is in git history (commits `21a415c`, `b18460c`,
+`d70cac7`, `6f3f453`, `cee5f76`), and was removed from the tree afterwards.
 
 ## Pine's bond
 

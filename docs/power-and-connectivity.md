@@ -105,6 +105,7 @@ and has moods (full design in [animations.md](animations.md)). You interact with
 | Press | firm touch (flattened fingertip, bigger area) | insists: wakes him, next show, "HEY!" if grumpy |
 | Squeeze | pinch front + back of the star (both faces are one electrode) | hug: blush and sparkles, or a squirm if grumpy |
 | Tickle | 3 taps within 1.4 s | giggle fit; too much makes him annoyed |
+| Touch anywhere on the tree | *not on rev A*: the LED lines pick up a finger's mains hum only on a mains-tied supply (nothing on a powerbank), so it was dropped (see the [firmware README](../firmware/pixelpine/README.md#touch-field-tried-dropped)) | — |
 | Room lights off | *not on rev A*: the LEDs can't be used as light sensors in a full charlieplex (see the [firmware README](../firmware/pixelpine/README.md#room-light)) | would make him sleepy in the dark |
 | Power-up | — | "Good morning" yawn; remembers your **bond** (stored in flash) |
 

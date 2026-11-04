@@ -133,176 +133,6 @@ int main(void) {
     scan_show(diag_level);
   }
 }
-#elif defined(TOUCHFIELD)
-/* experiment 3: mains hum on the LED lines as a touch field. No LED is ever driven: every line not being measured
- * is held at 0 V (the SWD lines L8/L9 excepted: the probe drives them). Per 800 ms round, for each of the 14 other
- * lines: the share of time the floating line reads digital high, listened for 2, 5 and 20 ms (x255); and for the
- * ADC lines L0-L6 the spread of 16 ADC samples over 20 ms. 125 rounds (100 s), then it stops; read after halting. */
-#define NR 125
-typedef struct { uint8_t dig[3][14]; uint8_t adc[7]; } rnd_t;
-volatile rnd_t rec[NR];
-volatile uint32_t nrec;
-static const uint8_t LPORT[14] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2 };    /* L0-L7, L10-L15 */
-static const uint8_t LPIN[14] = { 0, 1, 2, 3, 4, 5, 6, 12, 5, 6, 7, 0, 1, 4 };
-static gpio_t *const PORT[3] = { GPIOA, GPIOB, GPIOF };
-static void hold_low(void) {
-  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
-  GPIOA->MODER = (IDLE_A & ~0x0300FFFFu) | 0x01005555u;   /* PA0-PA7, PA12 out low (PA13/14 stay SWD) */
-  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;   /* PB5-PB7 out low */
-  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;   /* PF0, PF1, PF4 out low */
-}
-static uint8_t listen(int k, uint32_t ms) {               /* share of samples high, x255; samples every ~40 us */
-  hold_low();
-  gpio_t *g = PORT[LPORT[k]];
-  uint32_t b = LPIN[k], hi = 0, n = ms * 25;
-  g->MODER &= ~(3u << (2 * b));                           /* floating input */
-  for (uint32_t i = 0; i < n; i++) {
-    hi += (g->IDR >> b) & 1u;
-    for (volatile int w = 0; w < 60; w++) {}
-  }
-  hold_low();
-  return (uint8_t)(hi * 255 / n);
-}
-int main(void) {
-  clock_init();
-  sense_init();
-  SYSTICK->RVR = 0xFFFFFFu; SYSTICK->CVR = 0; SYSTICK->CSR = 5;
-  static const uint8_t WIN[3] = { 2, 5, 20 };
-  while (nrec < NR) {
-    uint32_t t0 = SYSTICK->CVR;
-    for (int k = 0; k < 14; k++)
-      for (int w = 0; w < 3; w++) rec[nrec].dig[w][k] = listen(k, WIN[w]);
-    for (int k = 0; k < 7; k++) {
-      uint32_t mn = 4095, mx = 0;
-      hold_low();
-      GPIOA->MODER |= 3u << (2 * k);
-      for (int n = 0; n < 16; n++) {
-        uint32_t v = adc_read((uint8_t)k, 3);
-        if (v < mn) mn = v;
-        if (v > mx) mx = v;
-        for (volatile int w = 0; w < 1500; w++) {}
-      }
-      rec[nrec].adc[k] = (uint8_t)((mx - mn) > 1020 ? 255 : (mx - mn) / 4);
-    }
-    hold_low();
-    nrec++;
-    for (uint32_t el = 0, prev = t0; el < 24000u * 800u;) {        /* 800 ms per round (SysTick wraps at 0.7 s) */
-      uint32_t now = SYSTICK->CVR;
-      el += (prev - now) & 0xFFFFFFu; prev = now;
-    }
-  }
-  hold_low();
-  for (;;) __asm__ volatile("wfi");
-}
-#elif defined(DRAIN)
-/* experiment 5: drain first, then listen. A moving brightness wave keeps every line busy with the normal scan.
- * Once per measured frame, at a random point (so the gaps never lock onto the mains phase), the scan pauses for one
- * short gap, using settings A-E in turn: A = experiment 4 (no drain, float 0.7 ms); B-E = every line driven to 0 V
- * for 5 us, then L0-L6 (analog mode: no Schmitt trigger, no pulls) and L11 float for 20 us / 0.2 / 0.7 / 2 ms while
- * the others stay at 0 V. Then one ADC read per line (L0-L6), and the two comparators against 1/4 Vrefint (~0.3 V):
- * COMP1 on PA1 = L1, COMP2 on PB6 = L11 - "did the line rise above 0.3 V at any time during the float".
- * Rest (hands off), then 9 spots, each cued by 4 blinks of that spot; 100 s in all. At the end every LED goes off
- * and PA13/PA14 go back to SWD: plug SWDIO / SWCLK back in and read with test/drain.py (no halt).
- * A normal build: PA13/PA14 are LED lines, so the probe's SWD wires must stay unplugged while it runs. */
-#define NSET 5
-#define NSTEP 10
-#define NCH 9                                          /* L0-L6 ADC, COMP1 (L1), COMP2 (L11) */
-volatile uint32_t dsum[NSTEP][NSET][NCH], dsq[NSTEP][NSET][7];
-volatile uint16_t dcnt[NSTEP][NSET];
-volatile uint32_t dframe, ddone;
-static const uint16_t FLOAT_US[NSET] = { 700, 20, 200, 700, 2000 };
-static const int8_t DSPOT[9][2] = { { 0, 3 }, { -3, 8 }, { 3, 8 }, { -5, 12 }, { 0, 12 }, { 5, 12 },
-                                    { -6, 17 }, { 0, 18 }, { 6, 17 } };   /* gx, gy (gy 1 = top) */
-#define COMP1_CSR REG32(0x40010200u)
-#define COMP2_CSR REG32(0x40010210u)
-static uint8_t dshow, dspot;                           /* 0 = wave, 1 = spot cue on, 2 = cue off (dark) */
-static uint32_t dwave;
-static uint8_t drain_level(int i) {
-  int gx = led_gx[i], gy = led_gy[i];
-  if (dshow == 1) { int dx = gx - DSPOT[dspot][0], dy = gy - DSPOT[dspot][1]; return dx * dx + dy * dy <= 2 ? 255 : 0; }
-  if (dshow == 2) return 0;
-  uint32_t u = (uint32_t)(gy * 21 + gx * 9) + dwave * 3;
-  u &= 255u;
-  return (uint8_t)(u < 128 ? u * 2 : (255 - u) * 2);
-}
-static uint32_t since(uint32_t c0) {                   /* SysTick cycles elapsed (counts down, 50 Hz reload) */
-  uint32_t now = SYSTICK->CVR;
-  return now <= c0 ? c0 - now : c0 + SYSTICK->RVR + 1 - now;
-}
-static void drain_gap(int step, int set) {
-  uint32_t cmp = 0;
-  scan_pause();                                        /* every line floating input */
-  uint32_t oa = GPIOA->ODR, ob = GPIOB->ODR, of = GPIOF->ODR;   /* the scan's anode, put back afterwards */
-  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
-  if (set) {                                           /* drain: all 16 lines out low for 5 us */
-    GPIOA->MODER = (IDLE_A & ~0x3F00FFFFu) | 0x15005555u;
-    GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;
-    GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
-    for (volatile int w = 0; w < 12; w++) {}
-  }
-  /* listen: PA0-PA6 and PB6 analog (floating, lightest load); PA7 (star), PA12-14, PB5, PB7, PF0/1/4 out low */
-  GPIOA->MODER = (IDLE_A & ~0x3F00FFFFu) | 0x15007FFFu;
-  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00004000u | 0x00003000u | 0x00000400u;
-  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
-  uint32_t c0 = SYSTICK->CVR, need = FLOAT_US[set] * 24u;
-  while (since(c0) < need) cmp |= (COMP1_CSR >> 30 & 1u) | (COMP2_CSR >> 30 & 1u) << 1;
-  cmp |= (COMP1_CSR >> 30 & 1u) | (COMP2_CSR >> 30 & 1u) << 1;
-  uint16_t v[7];
-  for (int k = 0; k < 7; k++) v[k] = adc_read((uint8_t)k, 0);
-  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
-  GPIOA->ODR = oa; GPIOB->ODR = ob; GPIOF->ODR = of;
-  scan_resume();
-  for (int k = 0; k < 7; k++) { dsum[step][set][k] += v[k]; dsq[step][set][k] += (uint32_t)(v[k] >> 2) * (v[k] >> 2); }
-  dsum[step][set][7] += cmp & 1u; dsum[step][set][8] += cmp >> 1;
-  dcnt[step][set]++;
-}
-int main(void) {
-  clock_init();
-  scan_init();
-  sense_init();
-  RCC->APBENR2 |= (1u << 21) | (1u << 22);            /* COMP1, COMP2 clocks */
-  COMP1_CSR = 1u | 1u << 1 | 0u << 4 | 2u << 8;        /* on, Vrefint scaler on, INM = 1/4 Vrefint, INP = PA1, high speed */
-  COMP2_CSR = 1u | 0u << 4 | 1u << 8;                  /* on, INM = 1/4 Vrefint, INP = PB6 */
-  SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
-  RCC_CSR |= 1u;
-  for (uint32_t n = 0; !(RCC_CSR & 2u) && n < 100000u; n++) {}
-  IWDG_KR = 0xCCCCu; IWDG_KR = 0x5555u; IWDG_PR = 4u; IWDG_RLR = 500u;
-  for (uint32_t n = 0; (IWDG_SR & 3u) && n < 100000u; n++) {}
-  IWDG_KR = 0xAAAAu;
-  for (int w = 0; w < 10 * FPS; w++) {                 /* 10 s dark: time to unplug SWDIO / SWCLK */
-    while (!tick) __asm__ volatile("wfi");
-    tick = 0;
-    IWDG_KR = 0xAAAAu;
-  }
-  uint32_t rng = 0x2545F491u, ngap = 0;
-  for (;;) {
-    while (!tick) __asm__ volatile("wfi");
-    tick = 0;
-    IWDG_KR = 0xAAAAu;
-    uint32_t f = dframe++;
-    if (f >= 5000) break;
-    /* frames: rest 0-500 (measured from 100), spot s: 500 + 500 s; cue 0-40, hand moves to 140, measured to 500 */
-    int step = 0, measure = f >= 100;
-    dshow = 0;
-    if (f >= 500) {
-      uint32_t s = (f - 500) / 500, u = (f - 500) % 500;
-      step = (int)s + 1; dspot = (uint8_t)s;
-      if (u < 40) dshow = (u / 5) % 2 ? 2 : 1;
-      measure = u >= 140;
-    }
-    dwave = f;
-    scan_show(drain_level);
-    if (!measure) continue;
-    rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-    uint32_t c0 = SYSTICK->CVR, wait = (rng % 12000u) * 24u;           /* 0-12 ms into the frame */
-    while (since(c0) < wait) {}
-    drain_gap(step, (int)(ngap++ % NSET));
-  }
-  scan_pause();
-  GPIOA->MODER = (IDLE_A & ~0x3C000000u) | 0x28000000u;               /* PA13/PA14 back to SWD */
-  ddone = 1;
-  for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); }
-}
 #elif defined(SHOWCYCLE)
 /* bring-up build: every light show for 8 s in turn, straight from shows.c */
 static scene_t demo;
@@ -325,75 +155,6 @@ int main(void) {
   }
 }
 #else
-#ifdef LISTEN
-/* experiment 4: touch-field listening while Pine runs, paced by the tree itself. Twice (gap setting 1, then 2): the
- * tree shows the digit, then Pine runs normally for 8 s (hands off), then each of 4 spots blinks twice and the
- * user holds a fingertip there for ~9 s. During Pine the LED scan pauses for short gaps in which the 7 ADC lines
- * L0-L6 float (every other line at 0 V) and are sampled round-robin; each line's spread of samples (mains hum from
- * a finger, /16) is summed under the step on show. Setting 1: 4 ms gaps every 100 ms, setting 2: 8 ms every 250 ms.
- * At the end every LED goes off and PA13/PA14 go back to SWD, so the probe's wires can be plugged back in and lsum
- * read without halting. A normal build: PA13/PA14 are LED lines, the probe's SWD wires stay unplugged while it runs. */
-#define LSTEPS 5                                       /* rest + 4 spots */
-volatile uint16_t lsum[2][LSTEPS][7], lcnt[2][LSTEPS];
-volatile uint32_t lframe, ldone;
-static uint8_t lshow;                                  /* 0 = Pine, 1 = digit, 2 = spot cue */
-static uint8_t lphase, lstep;
-static const int8_t SPOT[4][2] = { { 0, 18 }, { 5, 12 }, { 2, 6 }, { -6, 17 } };   /* gx, gy: low-mid, mid-right, up-right, low-left */
-static uint8_t listen_level(int i) {
-  int gx = led_gx[i], gy = led_gy[i];
-  if (lshow == 1) {                                    /* a 3 x 5 digit, rows gy 7-11 */
-    static const uint8_t D[2][5] = { { 2, 6, 2, 2, 7 }, { 7, 1, 7, 4, 7 } };   /* bit 2 = left column */
-    int r = gy - 7, c = gx + 1;
-    return r >= 0 && r < 5 && c >= 0 && c < 3 && (D[lphase][r] >> (2 - c) & 1) ? 255 : 0;
-  }
-  int dx = gx - SPOT[lstep - 1][0], dy = gy - SPOT[lstep - 1][1];
-  return dx * dx + dy * dy <= 2 ? 255 : 0;
-}
-static void listen_gap(uint32_t ms) {
-  scan_pause();
-  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOF->ODR = 0;
-  GPIOA->MODER = (IDLE_A & ~0x3F00C000u) | 0x15004000u | 0x3FFFu;   /* PA0-PA6 analog; PA7, PA12-PA14 low */
-  GPIOB->MODER = (IDLE_B & ~0x0000FC00u) | 0x00005400u;
-  GPIOF->MODER = (IDLE_F & ~0x0000030Fu) | 0x00000105u;
-  uint16_t mn[7], mx[7];
-  for (int k = 0; k < 7; k++) { mn[k] = 4095; mx[k] = 0; }
-  uint32_t c0 = SYSTICK->CVR, top = SYSTICK->RVR + 1, need = ms * 24000u;
-  for (;;) {
-    for (int k = 0; k < 7; k++) {
-      uint16_t v = adc_read((uint8_t)k, 3);
-      if (v < mn[k]) mn[k] = v;
-      if (v > mx[k]) mx[k] = v;
-    }
-    uint32_t now = SYSTICK->CVR, el = now <= c0 ? c0 - now : c0 + top - now;
-    if (el >= need) break;
-  }
-  GPIOA->MODER = IDLE_A; GPIOB->MODER = IDLE_B; GPIOF->MODER = IDLE_F;
-  scan_resume();
-  for (int k = 0; k < 7; k++) lsum[lphase][lstep][k] = (uint16_t)(lsum[lphase][lstep][k] + (mx[k] - mn[k]) / 16);
-  lcnt[lphase][lstep]++;
-}
-/* per phase, in frames: digit 0-100, rest 100-500, spot s: cue at 500 + 500 s (4 blinks of 0.15 s), then held */
-static void listen_tick(void) {
-  uint32_t f = lframe++, p = f / 2500, t = f % 2500;
-  if (p >= 2) {
-    scan_pause();
-    GPIOA->MODER = (IDLE_A & ~0x3C000000u) | 0x28000000u;   /* every line floating, PA13/PA14 back to SWD */
-    ldone = 1;
-    for (;;) { IWDG_KR = 0xAAAAu; __asm__ volatile("wfi"); }
-  }
-  lphase = (uint8_t)p;
-  if (t < 100) { lshow = 1; lstep = 0; return; }
-  if (t < 500) { lshow = 0; lstep = 0; }
-  else {
-    uint32_t s = (t - 500) / 500, u = (t - 500) % 500;
-    lstep = (uint8_t)(s + 1);
-    lshow = u < 30 && (u / 8) % 2 == 0 ? 2 : 0;
-    if (u < 130) return;                              /* the cue and ~2 s to reach the spot: not measured */
-  }
-  if (t < 200) return;                                /* the first 2 s of rest: not measured either */
-  if (p == 0 ? f % 5 == 0 : f % 12 == 0) listen_gap(p == 0 ? 4 : 8);
-}
-#endif
 /* Room light: rev A can't sense it (README.md, "Room light"), so Pine stays in the simulator's default "lights on". */
 
 /* Pine's bond in flash: saved when it moved by >= 0.02, at most every 15 minutes (flash wear) */
@@ -425,14 +186,13 @@ int main(void) {
   bond_saved = store_load_bond();
   SYSTICK->RVR = 24000000u / FPS - 1; SYSTICK->CVR = 0; SYSTICK->CSR = 7;
   pine_init(bond_saved / 65535.0);
-#if 1                                             /* independent watchdog, ~1 s on the 32 kHz LSI, in every build:
-                                                    * a frozen or halted chip resets, and reset turns every pin off */
+  /* independent watchdog, ~1 s on the 32 kHz LSI, in every build: a frozen or halted chip resets, and reset turns
+   * every pin off */
   RCC_CSR |= 1u;                                     /* LSI on: the watchdog's clock */
   for (uint32_t n = 0; !(RCC_CSR & 2u) && n < 100000u; n++) {}
   IWDG_KR = 0xCCCCu; IWDG_KR = 0x5555u; IWDG_PR = 4u; IWDG_RLR = 500u;
   for (uint32_t n = 0; (IWDG_SR & 3u) && n < 100000u; n++) {}
   IWDG_KR = 0xAAAAu;
-#endif
   /* One 50 fps tick = one simulator frame, always. If a frame ran late (two heavy shows in a transition), the
    * next one updates the logic only and skips building the LED levels, so animation speed never drifts; the LEDs
    * then keep the previous levels for one more frame. */
@@ -441,23 +201,14 @@ int main(void) {
     __asm__ volatile("cpsid i"); pending--; __asm__ volatile("cpsie i");
     uint32_t c0 = SYSTICK->CVR;
     pine_begin(sense_touch_level(sense_touch_raw()));
-#ifdef LISTEN
-    if (!pending) scan_show(lshow ? listen_level : pine_level);
-#else
     if (!pending) scan_show(pine_level);
-#endif
     else frames_late++;
     pine_end();
     bond_tick();
-#ifdef LISTEN
-    listen_tick();
-#endif
 #ifdef WDT_TEST
     while (debug_hang) {}
 #endif
-#if 1
     IWDG_KR = 0xAAAAu;
-#endif
     frame_cycles = c0 - SYSTICK->CVR; frame_no++;
     if (frame_cycles > frame_cycles_max) frame_cycles_max = frame_cycles;
   }
